@@ -1,3 +1,90 @@
+# KCCP — project memory
+
+> **이 저장소는 `kccp-attendance`와 `ppt`를 합친 것이다.** 두 저장소의 git
+> 히스토리가 모두 들어 있다 (`ppt`는 `vendor/ppt/` 서브트리). 아래 출석 관련
+> 규칙은 전부 그대로 유효하고, 합치면서 생긴 규칙이 먼저 온다.
+
+## 합치기 — 자격이 영역을 준다
+
+앱은 이제 영역 둘을 담는다: **출석**(지금까지의 관리자 패널)과 **슬라이드**
+(ppt에서 들어온 예배 슬라이드). 무엇을 볼 수 있는지는 역할이 아니라 **자격**이
+정하고, 규칙은 두 문장이다:
+
+> **비밀번호는 언제나 출석뿐이다. 슬라이드는 구글 계정으로만 열린다.**
+
+주일 화면에 나가는 일과 AI 무료 한도를 쓰는 일은, 회수할 수 있고 로그인 기록이
+남는 자격 뒤에 있어야 하기 때문이다. 공용 비밀번호는 바꾸는 순간 그걸 쓰던
+모두가 막히지만, 계정은 한 사람만 끊을 수 있다.
+
+- `Area = 'attend' | 'slides' | 'praise'`, `Role.areas: Area[]` (`auth.ts`).
+- `PASSWORD_GRANTS`의 셋(`kccpadmin`/`kccpwelcome`/`kccpadults`)은 전부
+  `areas: ['attend']`. **슬라이드를 여는 비밀번호는 만들지 않는다.**
+- `MEDIA_ACCOUNTS` — 부서 미디어팀의 **역할 계정**. 기본값은
+  `kccpmedia@gmail.com`(장년부) · `kccp.bitjulove.media@gmail.com`(대학·청년부),
+  `KCCP_MEDIA_ACCOUNTS` 환경 변수로 덮어쓴다. **members 행이 없고, 있어서도
+  안 된다** — 만드는 순간 그 이름이 출석부와 키오스크 명단에 나타난다.
+  (미디어팀을 `team_members.role`에 두면 안 되는 것과 같은 이유다: 역할이
+  데이터 모델을 잘못 고르면 그 오류는 화면에서 *없어야 할 이름*으로 드러난다.)
+- `OWNER_EMAIL` — `KCCP_OWNER_EMAIL`, 기본값 `spencerkim1235@gmail.com`.
+  **소유자는 신원을 대체하지 않고 영역만 넓힌다.** 처음에는 members 조회보다
+  먼저 가로채게 짰다가 기존 테스트가 깨졌고, 이유가 옳았다: 그 이메일은 이미
+  `CROSS_PARTITION_EMAILS`의 기본값이고 실제 members 행을 가진 사람이다.
+  가로채면 `memberId`가 사라지는데, 로그인 기록의 이름도 로그인 기록 열람
+  권한(`LOGIN_LOG_VIEWER_MEMBER_ID`)도 그 UUID에 걸려 있다. 그래서
+  `resolveMemberLogin()`을 갈라내고 소유자는 그 결과를 **감싼다.**
+
+### 막는 것은 화면이 아니라 서버다
+
+탭을 숨기는 것은 UI일 뿐이다. 비밀번호도 구글 토큰도 bearer 자격이라, 서버가
+막지 않으면 `curl` 한 번에 뚫린다.
+
+- `resolveAdmin()`이 라우트마다 영역을 요구한다. **굳은 라우트가 전부 이 함수를
+  지나므로 호출부는 한 줄도 고치지 않았다.**
+- `areaOf(path)`의 기본값은 `'attend'`다. 규칙을 빠뜨린 새 라우트는 *더 좁은*
+  쪽으로 떨어져 슬라이드 계정이 거부된다 — **열리는 것이 아니라 막히는 쪽으로
+  실패한다.** 새 영역을 더할 때 `ROUTE_AREA`에 접두사를 넣는 것을 잊지 마라.
+- `resolveIdentity()`는 영역 검사를 **하지 않는** 짝이다. 오직
+  `/api/admin/verify`가 쓴다 — 그 경로가 `/api/admin/` 아래라 검사를 걸면
+  슬라이드 계정은 로그인조차 못 한다. 다른 데서 쓰면 그 라우트는 뚫린 것이다.
+
+### 화면 쪽
+
+- `/` = **관리자 로그인**(`AdminShell`). 옛 공개 체크인 화면은 `/checkin`으로
+  내려왔고 지우지 않았다. `/admin`도 같은 화면으로 그대로 산다.
+- `AdminShell`이 영역으로 갈라진다. 영역이 하나면 묻지 않고 곧장, 둘 이상이면
+  `AreaChoice` 한 번. **영역 판정이 부(部) 고르기보다 먼저** 온다 — 부 고르기는
+  출석 영역 *안의* 물음이라 슬라이드로 가는 사람에게는 뜻이 없다.
+- `web/src/lib/api.ts`의 `AdminRole`은 `auth.ts`의 것을 **미러**한다
+  (`partition.ts`가 부 모델을 미러하는 것과 같은 규칙). 어긋나면 화면이 서버가
+  실제로 내려주는 역할을 모르는 채 분기한다.
+- `areasOf()`는 `areas` 없는 응답(옛 엣지 함수)을 `['attend']`로 읽는다.
+
+### 폴더
+
+`web/src/features/` → **`web/src/areas/`**. 합쳐진 앱은 출석 앱이 아니라 영역을
+가진 앱이라, 폴더가 출석 모양이면 그 모양대로 자란다.
+
+    areas/attend/   admin · checkin · dongsan · kiosk · share  (옛 features/)
+    areas/slides/   ppt에서 들어올 자리 — 지금은 껍데기
+    areas/AreaChoice.tsx
+
+`vendor/ppt/`는 아직 손대지 않은 원본이다. 다음 작업은 그 안의 **순수
+라이브러리**(`src/lib/pptx*`, `src/bible/`, `src/lib/lyrics/`)를
+`areas/slides/`로 `git mv` 하는 것 — 지우고 새로 만들면 `git blame`이 그 자리에서
+끊겨, 왜 이 줄이 이렇게 되었는지 묻는 순간 답이 사라진다. `vendor/ppt/worker/`는
+옮기지 않는다. Supabase 엣지 함수(`ai-proxy`)로 다시 짓는다.
+
+### 번들 예산
+
+합치기가 실패한다면 번들에서 실패한다. 슬라이드가 끌고 올 무게(pdfjs ~1MB, 성경
+본문 번역본당 수 MB)는 출석 쪽과 자릿수가 다르다. **기준선을 옮기기 전에 재 뒀다:
+precache 1063 KiB** (영역 구조 도입 후, 슬라이드 코드가 들어오기 전). 슬라이드
+영역은 반드시 lazy로 유지하고, 이 숫자가 크게 움직이면 무언가 랜딩으로 샌 것이다.
+
+---
+
+# (이하 kccp-attendance에서 이어짐)
+
 # KCCP Attendance — project memory
 
 Korean church (한국중앙교회 피츠버그) attendance system, serving **two departments out of one
