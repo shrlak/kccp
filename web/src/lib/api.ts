@@ -124,7 +124,24 @@ export function configCalendar(cfg?: AppConfig | null): TermCalendar | undefined
 // dashboard), the welcoming password → 'welcoming' (새가족팀 dashboard). All get full-roster
 // visibility; the server synthesizes them (see auth.ts verifyAdmin). 'staff' is the legacy
 // combined break-glass role, kept for back-compat.
-export type AdminRole = 'super_admin' | 'leader' | 'pastor' | 'welcoming' | 'staff'
+export type AdminRole =
+  | 'super_admin' | 'leader' | 'pastor' | 'welcoming' | 'staff'
+  // 합치면서 생긴 둘. 서버의 auth.ts와 짝을 맞춰 둔다 — 어긋나면 화면이 서버가
+  // 실제로 내려주는 역할을 모르는 채로 분기한다.
+  | 'media'   // 부서 미디어팀 역할 계정 — 슬라이드 영역만
+  | 'owner'   // 소유자 — 부와 영역의 경계를 넘는다
+
+// 합쳐진 앱의 영역. 'attend'는 지금까지의 관리자 패널이고, 'slides'는 ppt에서 들어온
+// 예배 슬라이드다. 어느 것을 가졌는지는 자격이 정한다 — 비밀번호는 언제나 출석뿐이고,
+// 슬라이드는 구글 계정으로만 열린다.
+export type Area = 'attend' | 'slides' | 'praise'
+
+// 영역이 없는 응답(옛 엣지 함수)은 출석 하나로 읽는다. 새 화면이 옛 서버 앞에서
+// 빈 손이 되지 않도록.
+export function areasOf(identity: AdminIdentity | null | undefined): Area[] {
+  const list = identity?.areas
+  return list && list.length ? list : ['attend']
+}
 
 export interface AdminIdentity {
   role: AdminRole
@@ -137,6 +154,10 @@ export interface AdminIdentity {
   // the right settings block, and to drop the 새가족 교육 tab in 장년부.
   // Absent on a response from an edge function older than the 장년부 rollout → 'youth'.
   partition?: Partition
+  // 이 자격이 들어갈 수 있는 영역. 서버가 정하고(auth.ts), 화면은 어디로 보낼지 고르는
+  // 데에만 쓴다 — 지키는 것은 여기가 아니라 서버다(resolveAdmin이 라우트마다 검사한다).
+  // Absent ⇒ 영역이 생기기 전의 엣지 함수 → 'attend' 하나로 읽는다.
+  areas?: Area[]
   // True only for the designated login-log viewer (김호연), signed in attributably —
   // linked device or Google email, never a bare shared password. Server-decided
   // (auth.ts canViewLoginLog); gates the login-history section in the Admins tab.

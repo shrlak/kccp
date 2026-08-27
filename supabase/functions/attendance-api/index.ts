@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { ADULT_GROUP, ADULT_SCHEMA, canChoosePartition, canViewLoginLog, dbOf, inScope, inScopeGroup, partitionOfGroup, resolveAdmin, scopeFilter, type Partition, type Role, type Scope } from "./auth.ts";
+import { ADULT_GROUP, ADULT_SCHEMA, canChoosePartition, canViewLoginLog, dbOf, inScope, inScopeGroup, partitionOfGroup, resolveAdmin, resolveIdentity, scopeFilter, type Partition, type Role, type Scope } from "./auth.ts";
 import { currentSeason, DEFAULT_SEMESTER_DATES, isSummerTerm, lastEndedTermKey, mergeSchedule, rollSchedule, sameSchedule, scheduleOf, scheduleToDates, subgroupSnapshot, trimHistory, validSchedule } from "./term.ts";
 import { availableCardModels, buildCardRequest, cardModelChain, hasGen3Options, parseCardResponse } from "./gemini.ts";
 import { csvUrl, matchPerson, mergeSheetMarks, nameCounts, normalizeMarks, parseAttendanceSheet, parseSheetUrl, sameMarks, type ParsedSheet } from "./sheetSync.ts";
@@ -1061,6 +1061,14 @@ Deno.serve(async (req: Request) => {
     if(r){ actingPartition=r.partition; adb=dbOf(sb,r.partition); }
     return r;
   };
+  // 신원만 푼다 — 영역 검사를 하지 않는 짝. 오직 /api/admin/verify가 쓴다: 로그인 화면은
+  // "이 자격은 어느 영역을 가졌나"를 물어야 어디로 보낼지 정할 수 있는데, 그 물음 자체가
+  // /api/admin/ 아래에 있어 영역 검사를 걸면 슬라이드 계정은 **로그인조차 못 한다.**
+  const identity=async(): Promise<Role|null>=>{
+    const r=await resolveIdentity(sb,req);
+    if(r){ actingPartition=r.partition; adb=dbOf(sb,r.partition); }
+    return r;
+  };
   const ok=(obj:any)=>{
     if(req.method!=="GET") scheduleAutoBackup(sb,p,actingPartition); // success on a mutating route → coalesced auto-backup
     return new Response(JSON.stringify(obj),{headers:{...CORS,"Content-Type":"application/json"}});
@@ -1087,14 +1095,14 @@ Deno.serve(async (req: Request) => {
 
     // ── Hardened admin auth: Google JWT, or the master password from ANY device (break-glass) ──
     if(req.method==="POST"&&p==="/api/admin/verify") {
-      const role=await auth();
+      const role=await identity();
       if(!role) return fail(401,"Not authorized");
       await addLoginLog(sb,req,role);
       // partition tells the web app which department's panel to render — it drives every
       // 부서 list, the 새가족 교육 tab's visibility, and which config block it reads.
       // canChoosePartition: 이 로그인은 두 부를 다 볼 수 있다 → 패널이 "어느 부로" 화면을
       // 띄우고, 고른 값을 X-Partition으로 실어 보낸다.
-      return ok({role:role.role,group:role.group,subgroup:role.subgroup,ministry:role.ministry,partition:role.partition,canViewLoginLog:canViewLoginLog(role),canChoosePartition:canChoosePartition(role)});
+      return ok({role:role.role,group:role.group,subgroup:role.subgroup,ministry:role.ministry,partition:role.partition,areas:role.areas,canViewLoginLog:canViewLoginLog(role),canChoosePartition:canChoosePartition(role)});
     }
 
     // Scoped roster (replaces the world-readable /api/data for staff): super/pastor → their

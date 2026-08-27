@@ -33,8 +33,16 @@ function renderAt(path: string) {
 }
 
 describe('routes', () => {
-  it('renders the KCCP landing at / (kiosk-first: branded page, no check-in)', () => {
+  // 합치면서 첫 화면이 바뀌었다. / 는 이제 **관리자 로그인**이다 — 앱이 출석과 슬라이드를
+  // 함께 담고 어느 쪽을 보느냐는 자격이 정하므로, 문이 하나여야 하기 때문이다.
+  it('renders the admin login at / (the landing is the door)', async () => {
     renderAt('/')
+    expect(await screen.findByRole('button', { name: 'Google로 로그인' })).toBeInTheDocument()
+  })
+
+  // 옛 랜딩은 지우지 않고 내려왔다. 부원이 폰에서 여는 화면이라 로그인이 없다.
+  it('keeps the public check-in screen, moved to /checkin', () => {
+    renderAt('/checkin')
     expect(screen.getByRole('link', { name: '교회 키오스크 시작' })).toBeInTheDocument()
     // The hero heading is a live clock (Pittsburgh time), not a slogan.
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/\d{1,2}:\d{2}/)
@@ -44,7 +52,8 @@ describe('routes', () => {
 
   // /admin, /kiosk and /share are lazy route chunks (routes.tsx), so each renders the
   // Suspense splash for a tick before its screen appears — hence findBy, not getBy.
-  it('renders the admin login gate at /admin', async () => {
+  // 옛 주소도 그대로 산다 — 홈 화면에 추가해 둔 관리자와 문서의 링크가 /admin을 가리킨다.
+  it('keeps /admin working as the same screen', async () => {
     renderAt('/admin')
     expect(await screen.findByRole('button', { name: 'Google로 로그인' })).toBeInTheDocument()
   })

@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { adminVerify, adminVerifyGoogle, getLoginPosition, GEO_LOGIN_WAIT_MS, setAdminPassword, setAdminPartition, setAdminToken, type AdminIdentity } from '../lib/api'
+import { adminVerify, adminVerifyGoogle, getLoginPosition, GEO_LOGIN_WAIT_MS, setAdminPassword, setAdminPartition, setAdminToken, type AdminIdentity, type Area } from '../lib/api'
 import { supabase } from '../lib/supabase'
 import { queryClient } from '../lib/queryClient'
 import { clearPersistedQueries } from '../lib/queryPersist'
@@ -72,6 +72,11 @@ interface AdminAuthState {
   // 두 부를 다 맡는 계정이 부를 고르거나 건너간다 (identity.canChoosePartition).
   chosenPartition: Partition | null
   choosePartition: (partition: Partition) => Promise<void>
+  // 영역을 둘 이상 가진 자격이 고른 영역. 부(部) 고르기와 같은 자리에 사는 같은 성질의
+  // 값이다 — 서버가 준 것 중에서 **화면을 고르는** 것일 뿐, 권한이 아니다. 하나뿐인
+  // 자격에게는 AdminShell이 자동으로 채워 넣어 이 화면이 뜨지 않는다.
+  chosenArea: Area | null
+  chooseArea: (area: Area) => void
 }
 
 export const useAdminAuth = create<AdminAuthState>((set) => ({
@@ -81,6 +86,7 @@ export const useAdminAuth = create<AdminAuthState>((set) => ({
   // api 계층도 같은 값을 같은 자리에서 읽는다 (lib/partition) — 첫 요청의 헤더와 첫 렌더가
   // 같은 부를 보게 하려면 둘 중 하나가 다른 하나를 기다려선 안 된다.
   chosenPartition: readStoredPartition(),
+  chosenArea: null,
 
   // Break-glass: device + master password (unchanged).
   verify: async (password, captureLocation = true) => {
@@ -143,6 +149,8 @@ export const useAdminAuth = create<AdminAuthState>((set) => ({
     }
   },
 
+  chooseArea: (area) => set({ chosenArea: area }),
+
   signOut: () => {
     setAdminPassword(null)
     setAdminToken(null)
@@ -155,7 +163,7 @@ export const useAdminAuth = create<AdminAuthState>((set) => ({
     clearPersistedQueries()
     queryClient.clear()
     void supabase.auth.signOut()
-    set({ status: 'idle', identity: null, method: null, chosenPartition: null })
+    set({ status: 'idle', identity: null, method: null, chosenPartition: null, chosenArea: null })
   },
 }))
 
