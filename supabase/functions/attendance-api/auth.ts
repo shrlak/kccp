@@ -131,20 +131,77 @@ export function dbOf(sb: any, partition: Partition): any {
   return partition === "adult" ? sb.schema(ADULT_SCHEMA) : sb;
 }
 
+// ── 영역(Area) ──────────────────────────────────────────────────────────────
+// 합쳐진 앱은 출석과 슬라이드를 함께 담는다. 무엇을 볼 수 있는지는 역할이 아니라
+// **자격**이 정한다: 공용 비밀번호는 언제나 출석뿐이고, 슬라이드는 구글 계정으로만
+// 들어간다. 주일 화면에 나가는 일과 AI 무료 한도를 쓰는 일은, 회수할 수 있고 로그인
+// 기록이 남는 자격 뒤에 있어야 하기 때문이다.
+export type Area = "attend" | "slides" | "praise";
+
+// 라우트 접두사 → 필요한 영역. 기본값이 "attend"인 것이 안전 방향이다: 나중에 규칙을
+// 빠뜨린 새 라우트가 생기면 **더 좁은 쪽**으로 떨어져 슬라이드 계정이 거부된다.
+// 열리는 것이 아니라 막히는 쪽으로 실패한다.
+const ROUTE_AREA: ReadonlyArray<[string, Area]> = [
+  ["/api/slides/", "slides"],
+  ["/api/praise/", "praise"],
+];
+
+export function areaOf(pathname: string): Area {
+  for (const [prefix, area] of ROUTE_AREA) {
+    if (pathname.startsWith(prefix)) return area;
+  }
+  return "attend";
+}
+
+// 부·팀·영역의 모든 경계를 넘는 유일한 자격. 코드가 아니라 설정에 두는 이유는
+// LOGIN_LOG_VIEWER_MEMBER_ID와 같다 — 사람이 바뀔 때 배포를 다시 하지 않으려고.
+export const OWNER_EMAIL = (readEnv("KCCP_OWNER_EMAIL") ?? "spencerkim1235@gmail.com")
+  .trim().toLowerCase();
+
+export function isOwner(email: string | null | undefined): boolean {
+  return !!email && email.trim().toLowerCase() === OWNER_EMAIL;
+}
+
+// 부서 미디어팀의 **역할 계정**이다 — 사람이 아니다. 그래서 members에 행을 만들지
+// 않는다: 만드는 순간 그 이름이 출석부와 키오스크 명단에 나타난다. 이메일 → 부(部).
+//   KCCP_MEDIA_ACCOUNTS="a@x.com:adult,b@y.com:youth" 로 덮어쓸 수 있다.
+export const MEDIA_ACCOUNTS: ReadonlyMap<string, Partition> = readMediaAccounts(
+  readEnv("KCCP_MEDIA_ACCOUNTS") ??
+    "kccpmedia@gmail.com:adult,kccp.bitjulove.media@gmail.com:youth",
+);
+
+function readMediaAccounts(raw: string): ReadonlyMap<string, Partition> {
+  const out = new Map<string, Partition>();
+  for (const entry of raw.split(",")) {
+    const [email, part] = entry.split(":").map((x) => (x ?? "").trim());
+    const partition = readPartition(part);
+    if (email && partition) out.set(email.toLowerCase(), partition);
+  }
+  return out;
+}
+
+// 이 이메일이 미디어 역할 계정이면 그 부를, 아니면 null.
+export function mediaPartitionOf(email: string | null | undefined): Partition | null {
+  if (!email) return null;
+  return MEDIA_ACCOUNTS.get(email.trim().toLowerCase()) ?? null;
+}
+
 // Map a typed password to the break-glass grant it confers, or null if it matches none.
 // Checked super → welcoming → adult so the higher-privilege match wins if two passwords
 // are (mis)configured identically. There is deliberately no 리더 password (see above) —
 // `kccpleaders` now matches nothing and is rejected like any other wrong password.
 export function passwordGrant(
   password: string,
-): { role: "super_admin" | "leader" | "welcoming"; partition: Partition } | null {
+): { role: "super_admin" | "leader" | "welcoming"; partition: Partition; areas: Area[] } | null {
   if (!password) return null;
-  if (password === SUPER_PASSWORD) return { role: "super_admin", partition: "youth" };
+  // 비밀번호는 언제나 출석뿐이다. 슬라이드를 여는 비밀번호는 만들지 않는다.
+  const areas: Area[] = ["attend"];
+  if (password === SUPER_PASSWORD) return { role: "super_admin", partition: "youth", areas };
   // 새가족팀 공용 비밀번호는 대학·청년부의 것이다. 장년부에는 짝이 없다.
-  if (password === WELCOMING_PASSWORD) return { role: "welcoming", partition: "youth" };
+  if (password === WELCOMING_PASSWORD) return { role: "welcoming", partition: "youth", areas };
   // 장년부 runs its own department end to end, so its shared password is a super_admin —
   // inside the 장년부 partition only. scopeFilter pins it to 장년부 regardless of role.
-  if (password === ADULT_PASSWORD) return { role: "super_admin", partition: "adult" };
+  if (password === ADULT_PASSWORD) return { role: "super_admin", partition: "adult", areas };
   return null;
 }
 
@@ -157,7 +214,11 @@ export function passwordRole(password: string): "super_admin" | "leader" | "welc
 // Roles. "staff" is a legacy combined 리더+새가족팀 break-glass role (no longer minted by the
 // password path, which now grants "leader"/"welcoming" directly — kept for back-compat).
 // Distinct from a member's is_staff flag, which is unrelated.
-export type AdminRole = "super_admin" | "leader" | "pastor" | "welcoming" | "staff";
+export type AdminRole =
+  | "super_admin" | "leader" | "pastor" | "welcoming" | "staff"
+  // 합치면서 생긴 둘. 둘 다 출석 명단에는 닿지 않는다 (areas가 막는다).
+  | "media"   // 부서 미디어팀 역할 계정 — 자기 부의 슬라이드만
+  | "owner";  // 소유자 — 모든 경계를 넘는다
 
 export interface Role {
   memberId: string;
@@ -177,6 +238,9 @@ export interface Role {
   // person is still their own member row back home. Anything that resolves the member (the
   // sign-in log's name) must read this, not `partition`. Absent ⇒ the two are the same.
   memberPartition?: Partition;
+  // 이 자격이 들어갈 수 있는 영역. resolveAdmin이 라우트마다 검사한다 — 탭을 숨기는 것은
+  // 화면일 뿐이고, 비밀번호는 bearer 자격이라 서버가 막지 않으면 curl 한 번에 뚫린다.
+  areas: Area[];
 }
 
 // What an admin may see. `all` is "the whole partition", which is not the whole table:
@@ -309,6 +373,7 @@ export async function verifyAdmin(sb: SB, deviceId: string, password: string): P
           partition: grant.partition,
           email: "",
           memberPartition: grant.partition,
+          areas: grant.areas,
         };
       }
     }
@@ -327,6 +392,7 @@ export async function verifyAdmin(sb: SB, deviceId: string, password: string): P
     partition: grant.partition,
     email: "",
     memberPartition: grant.partition,
+    areas: grant.areas,
   };
 }
 
@@ -344,6 +410,53 @@ export async function verifyAdminJwt(sb: SB, jwt: string, wanted?: Partition | n
   const { data: { user } } = await sb.auth.getUser(jwt);
   if (!user?.email) return null;
   const email = user.email;
+
+  // 부서 미디어팀 역할 계정. **사람이 아니라 부서**라 members 행이 없고, 있어서도 안
+  // 된다 — 있으면 그 이름이 출석부와 키오스크 명단에 나타난다. 영역이 슬라이드뿐이라
+  // 이 계정으로는 명단에 닿을 수 없다(resolveAdmin이 막는다).
+  const mediaPartition = mediaPartitionOf(email);
+  if (mediaPartition) {
+    return {
+      memberId: "",
+      role: "media",
+      group: "",
+      subgroup: "",
+      ministry: "",
+      partition: mediaPartition,
+      email,
+      areas: ["slides"],
+    };
+  }
+
+  const resolved = await resolveMemberLogin(sb, email, wanted);
+
+  // 소유자는 **신원을 대체하지 않고 영역만 넓힌다.** members 행이 있으면 그 사람으로
+  // 남아야 하기 때문이다 — 로그인 기록에 남는 이름도, 로그인 기록 열람 권한도 그
+  // memberId에 걸려 있다. 갈아치우면 그 둘이 조용히 사라진다.
+  if (isOwner(email)) {
+    if (resolved) return { ...resolved, areas: ["attend", "slides"] };
+    // 명단에 행이 없는 소유자 — 그래도 들어올 수 있어야 한다.
+    return {
+      memberId: "",
+      role: "owner",
+      group: "",
+      subgroup: "",
+      ministry: "",
+      partition: readPartition(wanted ?? null) ?? "youth",
+      email,
+      areas: ["attend", "slides"],
+    };
+  }
+  return resolved;
+}
+
+// 이메일 → members 행 → 역할. verifyAdminJwt에서 갈라낸 안쪽 절반이다: 소유자 판정이
+// 이 결과를 **감싸야** 하므로(대체가 아니라) 따로 서 있어야 한다.
+async function resolveMemberLogin(
+  sb: SB,
+  email: string,
+  wanted?: Partition | null,
+): Promise<Role | null> {
   const cross = canCrossPartitions(email);
   // 고를 수 있는 사람이 고른 부를 먼저 찾는다 — 양쪽에 행이 있다면 고른 쪽이 이겨야 한다.
   const order: Partition[] = cross && wanted === "adult" ? ["adult", "youth"] : ["youth", "adult"];
@@ -372,6 +485,10 @@ export async function verifyAdminJwt(sb: SB, jwt: string, wanted?: Partition | n
       partition,
       email,
       memberPartition: partition,
+      // 사람으로 들어온 로그인은 역할이 있으면 출석을 갖는다. 슬라이드는 dept_roles로
+      // 따로 주는 자리를 남겨 둔다 — 언젠가 "누가 만들었는지" 이름으로 남기고 싶어지면
+      // 공용 계정을 건드리지 않고 그 사람에게 한 줄만 주면 된다.
+      areas: ["attend"],
     };
     // 고를 수 있는 사람이 자기 행이 없는 쪽을 골랐다: 그 부의 super_admin으로 건너간다.
     // 부서·동산을 비우는 이유 — 그것들은 **저쪽 부의 이름**이라 여기서는 뜻이 없고, 남겨 두면
@@ -393,6 +510,20 @@ export async function verifyAdminJwt(sb: SB, jwt: string, wanted?: Partition | n
 // only for CROSS_PARTITION_EMAILS, and the password path ignores it outright (a password
 // already says which 부 it is).
 export async function resolveAdmin(sb: SB, req: Request): Promise<Role | null> {
+  const role = await resolveIdentity(sb, req);
+  if (!role) return null;
+  // 영역 검사. 여기 하나에 두는 이유는, 굳은 라우트가 전부 이 함수를 지나기 때문이다 —
+  // 호출부를 한 줄도 고치지 않고 표면 전체가 덮인다. 탭을 숨기는 것으로는 아무것도
+  // 지켜지지 않는다: 슬라이드 계정이 /api/admin/list 를 curl하면 명단이 나와야 할 이유가
+  // 없고, 막는 것은 화면이 아니라 여기다.
+  const wanted = areaOf(new URL(req.url).pathname);
+  if (!role.areas.includes(wanted)) return null;
+  return role;
+}
+
+// 자격 → 신원. 영역 검사를 하지 않는 안쪽 절반 — 로그인 화면이 "이 사람은 어느 영역을
+// 갖고 있나"를 물어야 하므로(어디로 보낼지 정하려고) 그 물음에는 문이 열려 있어야 한다.
+export async function resolveIdentity(sb: SB, req: Request): Promise<Role | null> {
   const auth = req.headers.get("authorization") || "";
   if (auth.startsWith("Bearer ")) {
     return verifyAdminJwt(sb, auth.slice(7), readPartition(req.headers.get("x-partition")));

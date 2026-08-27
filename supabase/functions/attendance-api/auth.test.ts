@@ -27,11 +27,17 @@ import {
   MASTER_PASSWORD,
   type Role,
   type Scope,
+  areaOf,
+  isOwner,
+  mediaPartitionOf,
+  OWNER_EMAIL,
+  MEDIA_ACCOUNTS,
+  resolveAdmin,
+  resolveIdentity,
 } from "./auth.ts";
 
 const leader: Role = {
-  memberId: "m", role: "leader", group: "청년부", subgroup: "건영동산", ministry: "KM", partition: "youth",
-};
+  memberId: "m", role: "leader", group: "청년부", subgroup: "건영동산", ministry: "KM", partition: "youth", areas: ["attend"] };
 // 두 부를 다 맡는 계정의 이메일 — 기본값 하나뿐이지만, 목록에서 읽어 와 환경변수로 바꿔도
 // 테스트가 따라가게 한다.
 const CROSS_EMAIL = [...CROSS_PARTITION_EMAILS][0];
@@ -92,9 +98,9 @@ Deno.test("passwordRole: maps each password to its break-glass role", () => {
 });
 
 Deno.test("passwordGrant: the 장년부 password is a super_admin in the adult partition", () => {
-  assertEquals(passwordGrant(ADULT_PASSWORD), { role: "super_admin", partition: "adult" });
-  assertEquals(passwordGrant(SUPER_PASSWORD), { role: "super_admin", partition: "youth" });
-  assertEquals(passwordGrant(WELCOMING_PASSWORD), { role: "welcoming", partition: "youth" });
+  assertEquals(passwordGrant(ADULT_PASSWORD), { role: "super_admin", partition: "adult", areas: ["attend"] });
+  assertEquals(passwordGrant(SUPER_PASSWORD), { role: "super_admin", partition: "youth", areas: ["attend"] });
+  assertEquals(passwordGrant(WELCOMING_PASSWORD), { role: "welcoming", partition: "youth", areas: ["attend"] });
   assertEquals(passwordGrant("nope"), null);
 });
 
@@ -109,17 +115,17 @@ Deno.test("verifyAdmin: wrong password is rejected (no DB hit)", async () => {
 
 Deno.test("verifyAdmin: super password grants break-glass 'super_admin' from an unregistered device", async () => {
   const r = await verifyAdmin(mockSb({ devices: null }), "DEV-UNKNOWN-99", SUPER_PASSWORD);
-  assertEquals(r, { memberId: "", role: "super_admin", group: "", subgroup: "", ministry: "", partition: "youth", email: "", memberPartition: "youth" });
+  assertEquals(r, { memberId: "", role: "super_admin", group: "", subgroup: "", ministry: "", partition: "youth", email: "", memberPartition: "youth", areas: ["attend"] });
 });
 
 Deno.test("verifyAdmin: welcoming password grants break-glass 'welcoming' from an unregistered device", async () => {
   const r = await verifyAdmin(mockSb({ devices: null }), "DEV-UNKNOWN-99", WELCOMING_PASSWORD);
-  assertEquals(r, { memberId: "", role: "welcoming", group: "", subgroup: "", ministry: "", partition: "youth", email: "", memberPartition: "youth" });
+  assertEquals(r, { memberId: "", role: "welcoming", group: "", subgroup: "", ministry: "", partition: "youth", email: "", memberPartition: "youth", areas: ["attend"] });
 });
 
 Deno.test("verifyAdmin: the 장년부 password lands in the adult partition", async () => {
   const r = await verifyAdmin(mockSb({ devices: null }), "DEV-UNKNOWN-99", ADULT_PASSWORD);
-  assertEquals(r, { memberId: "", role: "super_admin", group: "", subgroup: "", ministry: "", partition: "adult", email: "", memberPartition: "adult" });
+  assertEquals(r, { memberId: "", role: "super_admin", group: "", subgroup: "", ministry: "", partition: "adult", email: "", memberPartition: "adult", areas: ["attend"] });
 });
 
 Deno.test("verifyAdmin: a password works on a ROSTER/blank device too", async () => {
@@ -139,6 +145,7 @@ Deno.test("verifyAdmin: a registered device linked to a leader keeps that scope"
   assertEquals(r, {
     memberId: "m1", role: "leader", group: "청년부", subgroup: "건영동산", ministry: "KM", partition: "youth",
     email: "", memberPartition: "youth",
+      areas: ["attend"],
   });
 });
 
@@ -154,6 +161,7 @@ Deno.test("verifyAdmin: a 장년부 리더's phone keeps that scope under the �
   assertEquals(r, {
     memberId: "a1", role: "leader", group: ADULT_GROUP, subgroup: "1셀", ministry: "", partition: "adult",
     email: "", memberPartition: "adult",
+      areas: ["attend"],
   });
 });
 
@@ -170,7 +178,7 @@ Deno.test("verifyAdmin: a device's grant never crosses partitions", async () => 
   );
   assertEquals(crossed, {
     memberId: "", role: "super_admin", group: "", subgroup: "", ministry: "", partition: "adult",
-    email: "", memberPartition: "adult",
+    email: "", memberPartition: "adult", areas: ["attend"],
   });
   // …그리고 그 반대도 마찬가지.
   const other = await verifyAdmin(
@@ -193,24 +201,24 @@ Deno.test("dbOf: 장년부만 adult 스키마로 간다", () => {
 });
 
 Deno.test("super_admin sees their whole partition — everything except 장년부", () => {
-  const s: Role = { memberId: "m", role: "super_admin", group: "", subgroup: "", ministry: "", partition: "youth" };
+  const s: Role = { memberId: "m", role: "super_admin", group: "", subgroup: "", ministry: "", partition: "youth", areas: ["attend"] };
   assertEquals(scopeFilter(s, false), YOUTH_ALL);
 });
 
 Deno.test("pastor sees the 대학·청년부 roster (read-only is enforced elsewhere)", () => {
-  const s: Role = { memberId: "m", role: "pastor", group: "", subgroup: "", ministry: "", partition: "youth" };
+  const s: Role = { memberId: "m", role: "pastor", group: "", subgroup: "", ministry: "", partition: "youth", areas: ["attend"] };
   assertEquals(scopeFilter(s, false), YOUTH_ALL);
 });
 
 Deno.test("staff (break-glass) sees the whole 대학·청년부 roster, like super/pastor", () => {
-  const s: Role = { memberId: "", role: "staff", group: "", subgroup: "", ministry: "", partition: "youth" };
+  const s: Role = { memberId: "", role: "staff", group: "", subgroup: "", ministry: "", partition: "youth", areas: ["attend"] };
   assertEquals(scopeFilter(s, false), YOUTH_ALL);
   assertEquals(scopeFilter(s, true), YOUTH_ALL);
 });
 
 Deno.test("break-glass leader/welcoming (no memberId) see the whole 대학·청년부 roster", () => {
-  const bgLeader: Role = { memberId: "", role: "leader", group: "", subgroup: "", ministry: "", partition: "youth" };
-  const bgWelcoming: Role = { memberId: "", role: "welcoming", group: "", subgroup: "", ministry: "", partition: "youth" };
+  const bgLeader: Role = { memberId: "", role: "leader", group: "", subgroup: "", ministry: "", partition: "youth", areas: ["attend"] };
+  const bgWelcoming: Role = { memberId: "", role: "welcoming", group: "", subgroup: "", ministry: "", partition: "youth", areas: ["attend"] };
   assertEquals(scopeFilter(bgLeader, false), YOUTH_ALL);
   assertEquals(scopeFilter(bgLeader, true), YOUTH_ALL);
   assertEquals(scopeFilter(bgWelcoming, false), YOUTH_ALL);
@@ -226,43 +234,42 @@ Deno.test("KM leader spans both depts in summer mode (합동)", () => {
 });
 
 Deno.test("합동 leader spans both 부서 in EVERY season (임원 account)", () => {
-  const s: Role = { memberId: "m", role: "leader", group: "합동", subgroup: "", ministry: "KM", partition: "youth" };
+  const s: Role = { memberId: "m", role: "leader", group: "합동", subgroup: "", ministry: "KM", partition: "youth", areas: ["attend"] };
   assertEquals(scopeFilter(s, false), { all: false, groups: ["대학부", "청년부"], subgroup: "" });
   assertEquals(scopeFilter(s, true), { all: false, groups: ["대학부", "청년부"], subgroup: "" });
 });
 
 Deno.test("welcoming is scoped to its group in semester mode (봄/가을동산)", () => {
-  const s: Role = { memberId: "m", role: "welcoming", group: "청년부", subgroup: "", ministry: "KM", partition: "youth" };
+  const s: Role = { memberId: "m", role: "welcoming", group: "청년부", subgroup: "", ministry: "KM", partition: "youth", areas: ["attend"] };
   assertEquals(scopeFilter(s, false), { all: false, groups: ["청년부"], subgroup: "" });
 });
 
 Deno.test("welcoming spans both 부서 in summer mode (여름동산 합동)", () => {
-  const univ: Role = { memberId: "m", role: "welcoming", group: "대학부", subgroup: "", ministry: "KM", partition: "youth" };
-  const young: Role = { memberId: "m", role: "welcoming", group: "청년부", subgroup: "", ministry: "KM", partition: "youth" };
+  const univ: Role = { memberId: "m", role: "welcoming", group: "대학부", subgroup: "", ministry: "KM", partition: "youth", areas: ["attend"] };
+  const young: Role = { memberId: "m", role: "welcoming", group: "청년부", subgroup: "", ministry: "KM", partition: "youth", areas: ["attend"] };
   assertEquals(scopeFilter(univ, true), { all: false, groups: ["대학부", "청년부"], subgroup: "" });
   assertEquals(scopeFilter(young, true), { all: false, groups: ["대학부", "청년부"], subgroup: "" });
 });
 
 Deno.test("장년부 admins are pinned to 장년부 — summer 합동 never applies", () => {
   const adultSuper: Role = {
-    memberId: "", role: "super_admin", group: "", subgroup: "", ministry: "", partition: "adult",
+    memberId: "", role: "super_admin", group: "", subgroup: "", ministry: "", partition: "adult", areas: ["attend"],
   };
   assertEquals(scopeFilter(adultSuper, false), { all: false, groups: [ADULT_GROUP], subgroup: "" });
   assertEquals(scopeFilter(adultSuper, true), { all: false, groups: [ADULT_GROUP], subgroup: "" });
   // a 장년부 리더 additionally keeps their 동산
   const adultLeader: Role = {
-    memberId: "a1", role: "leader", group: ADULT_GROUP, subgroup: "1구역", ministry: "", partition: "adult",
-  };
+    memberId: "a1", role: "leader", group: ADULT_GROUP, subgroup: "1구역", ministry: "", partition: "adult", areas: ["attend"] };
   assertEquals(scopeFilter(adultLeader, true), { all: false, groups: [ADULT_GROUP], subgroup: "1구역" });
 });
 
 Deno.test("inScope: the two partitions can never see each other", () => {
   const youth = scopeFilter(
-    { memberId: "m", role: "super_admin", group: "", subgroup: "", ministry: "", partition: "youth" },
+    { memberId: "m", role: "super_admin", group: "", subgroup: "", ministry: "", partition: "youth", areas: ["attend"] },
     false,
   );
   const adult = scopeFilter(
-    { memberId: "", role: "super_admin", group: "", subgroup: "", ministry: "", partition: "adult" },
+    { memberId: "", role: "super_admin", group: "", subgroup: "", ministry: "", partition: "adult", areas: ["attend"] },
     false,
   );
   assertEquals(inScope(youth, "청년부", "건영동산"), true);
@@ -289,7 +296,7 @@ Deno.test("inScopeGroup: 목적지 부서만 본다 — 동산은 묻지 않는�
   assertEquals(inScope(s, "청년부"), false);        // inScope는 여전히 동산을 요구한다
   assertEquals(inScopeGroup(s, "대학부"), false);   // 다른 부서는 그대로 막힌다
   const adult = scopeFilter(
-    { memberId: "", role: "super_admin", group: "", subgroup: "", ministry: "", partition: "adult" },
+    { memberId: "", role: "super_admin", group: "", subgroup: "", ministry: "", partition: "adult", areas: ["attend"] },
     false,
   );
   assertEquals(inScopeGroup(adult, ADULT_GROUP), true);
@@ -299,8 +306,7 @@ Deno.test("inScopeGroup: 목적지 부서만 본다 — 동산은 묻지 않는�
 Deno.test("canViewLoginLog: only the designated member, and only as super_admin", () => {
   const viewer: Role = {
     memberId: LOGIN_LOG_VIEWER_MEMBER_ID, role: "super_admin", group: "대학부", subgroup: "호연동산", ministry: "",
-    partition: "youth",
-  };
+    partition: "youth", areas: ["attend"] };
   assertEquals(canViewLoginLog(viewer), true);
   // any other super admin is denied — this is not a role-wide feature
   assertEquals(canViewLoginLog({ ...viewer, memberId: "someone-else" }), false);
@@ -383,8 +389,9 @@ Deno.test("두 부를 다 맡는 계정은 건너간 부에서도 로그인 기�
   const youth: Role = {
     memberId: LOGIN_LOG_VIEWER_MEMBER_ID, role: "super_admin", group: "대학부", subgroup: "호연동산",
     ministry: "", partition: "youth", email: CROSS_EMAIL, memberPartition: "youth",
+      areas: ["attend"],
   };
-  const adult: Role = { ...youth, group: "", subgroup: "", partition: "adult" };
+  const adult: Role = { ...youth, group: "", subgroup: "", partition: "adult", areas: ["attend"] };
   assertEquals(canViewLoginLog(youth), true);
   assertEquals(canViewLoginLog(adult), true);
   // 장년부 공용 비밀번호는 여전히 안 된다 — 누구든 칠 수 있는 값이라 신원이 아니다.
@@ -393,8 +400,7 @@ Deno.test("두 부를 다 맡는 계정은 건너간 부에서도 로그인 기�
 
 Deno.test("canChoosePartition: 구글 로그인에만, 지정된 이메일에만 붙는다", () => {
   const base: Role = {
-    memberId: "m", role: "super_admin", group: "", subgroup: "", ministry: "", partition: "youth",
-  };
+    memberId: "m", role: "super_admin", group: "", subgroup: "", ministry: "", partition: "youth", areas: ["attend"] };
   assertEquals(canChoosePartition({ ...base, email: CROSS_EMAIL }), true);
   assertEquals(canChoosePartition({ ...base, email: "someone.else@gmail.com" }), false);
   // 비밀번호 로그인에는 이메일이 없다 — 비밀번호 자체가 이미 부를 뜻한다.
@@ -427,7 +433,7 @@ Deno.test("새가족팀 공용 비밀번호는 대학·청년부 전용이다", 
   assertEquals(passwordGrant(WELCOMING_PASSWORD)?.partition, "youth");
   // 그 비밀번호로 들어온 로그인이 보는 범위도 대학·청년부뿐 — 장년부는 빠진다.
   const scope = scopeFilter(
-    { memberId: "", role: "welcoming", group: "", subgroup: "", ministry: "", partition: "youth" },
+    { memberId: "", role: "welcoming", group: "", subgroup: "", ministry: "", partition: "youth", areas: ["attend"] },
     false,
   );
   assertEquals(inScopeGroup(scope, "대학부"), true);
@@ -441,4 +447,109 @@ Deno.test("공용 비밀번호는 셋 — 그 밖의 값은 전부 거절", asyn
   for (const wrong of ["kccpleaders", "kccpleader", "nope", " ", ""]) {
     assertEquals(await verifyAdmin(mockSb({}), "DEV-x", wrong), null);
   }
+});
+
+
+// ── 영역(Area) ─────────────────────────────────────────────────────────────
+// 합치면서 새로 생긴 규칙: 자격이 영역을 준다. 아래 테스트가 지키는 것은 두 문장이다 —
+// 비밀번호는 언제나 출석뿐이고, 슬라이드는 구글 계정으로만 열린다.
+
+Deno.test("areaOf: 기본값은 attend — 규칙을 빠뜨린 라우트는 좁은 쪽으로 떨어진다", () => {
+  assertEquals(areaOf("/api/admin/list"), "attend");
+  assertEquals(areaOf("/api/roster"), "attend");
+  assertEquals(areaOf("/api/some/route/nobody/mapped"), "attend");
+  assertEquals(areaOf("/api/slides/deck"), "slides");
+  assertEquals(areaOf("/api/praise/setlist"), "praise");
+});
+
+Deno.test("미디어 역할 계정은 두 부에 하나씩, 사람이 아니라 부서다", () => {
+  assertEquals(mediaPartitionOf("kccpmedia@gmail.com"), "adult");
+  assertEquals(mediaPartitionOf("kccp.bitjulove.media@gmail.com"), "youth");
+  // 대소문자·공백은 사람이 흘리는 것이라 신원을 가르면 안 된다.
+  assertEquals(mediaPartitionOf("  KCCPMedia@Gmail.com "), "adult");
+  assertEquals(mediaPartitionOf("someone.else@gmail.com"), null);
+  assertEquals(mediaPartitionOf(null), null);
+  assertEquals(MEDIA_ACCOUNTS.size, 2);
+});
+
+Deno.test("isOwner: 소유자 이메일은 설정에 살고 대소문자를 가리지 않는다", () => {
+  assertEquals(isOwner(OWNER_EMAIL), true);
+  assertEquals(isOwner(" SpencerKim1235@Gmail.com "), true);
+  assertEquals(isOwner("kccpmedia@gmail.com"), false);
+  assertEquals(isOwner(""), false);
+});
+
+Deno.test("비밀번호는 셋 다 출석뿐이다 — 슬라이드를 여는 비밀번호는 없다", async () => {
+  for (const pw of [SUPER_PASSWORD, WELCOMING_PASSWORD, ADULT_PASSWORD]) {
+    const r = await verifyAdmin(mockSb({ devices: null }), "DEV-UNKNOWN-99", pw);
+    assertEquals(r?.areas, ["attend"]);
+  }
+});
+
+Deno.test("미디어 계정: 슬라이드만, 자기 부만, members 행 없이", async () => {
+  // members/member_roles를 통째로 비워 둔다 — 이 계정은 명단에 없어야 하고,
+  // 없어도 들어올 수 있어야 한다.
+  const adult = await verifyAdminJwt(mockSb({}, {}, "kccpmedia@gmail.com"), "jwt");
+  assertEquals(adult?.role, "media");
+  assertEquals(adult?.areas, ["slides"]);
+  assertEquals(adult?.partition, "adult");
+  assertEquals(adult?.memberId, "");
+
+  const youth = await verifyAdminJwt(mockSb({}, {}, "kccp.bitjulove.media@gmail.com"), "jwt");
+  assertEquals(youth?.partition, "youth");
+  assertEquals(youth?.areas, ["slides"]);
+});
+
+Deno.test("소유자는 신원을 대체하지 않고 영역만 넓힌다", async () => {
+  const sb = mockSb(
+    { members: { id: LOGIN_LOG_VIEWER_MEMBER_ID }, member_roles: { role: "super_admin", group_name: "대학부", subgroup: "호연동산", ministry: "" } },
+    {},
+    OWNER_EMAIL,
+  );
+  const r = await verifyAdminJwt(sb, "jwt");
+  // 사람은 그대로다 — 로그인 기록의 이름도, 로그인 기록 열람 권한도 이 memberId에 걸려 있다.
+  assertEquals(r?.memberId, LOGIN_LOG_VIEWER_MEMBER_ID);
+  assertEquals(r?.role, "super_admin");
+  assertEquals(r?.group, "대학부");
+  // 넓어지는 것은 영역뿐이다.
+  assertEquals(r?.areas, ["attend", "slides"]);
+});
+
+Deno.test("소유자가 명단에 없어도 들어온다", async () => {
+  const r = await verifyAdminJwt(mockSb({}, {}, OWNER_EMAIL), "jwt");
+  assertEquals(r?.role, "owner");
+  assertEquals(r?.areas, ["attend", "slides"]);
+});
+
+// ── 서버가 막는다 ──────────────────────────────────────────────────────────
+// 탭을 숨기는 것은 화면일 뿐이다. 아래 셋이 그 문장을 코드로 붙잡는다.
+
+function req(path: string, headers: Record<string, string>): Request {
+  return new Request("https://kccp.example" + path, { headers });
+}
+
+Deno.test("미디어 계정으로 명단 라우트를 열면 거부된다", async () => {
+  const sb = mockSb({}, {}, "kccpmedia@gmail.com");
+  const auth = { authorization: "Bearer jwt" };
+
+  // 신원은 풀린다 — 로그인 화면이 "어느 영역을 가졌나"를 물어야 하므로.
+  assertEquals((await resolveIdentity(sb, req("/api/admin/list", auth)))?.role, "media");
+  // 그런데 출석 라우트는 열리지 않는다.
+  assertEquals(await resolveAdmin(sb, req("/api/admin/list", auth)), null);
+  // 자기 영역은 열린다.
+  assertEquals((await resolveAdmin(sb, req("/api/slides/deck", auth)))?.role, "media");
+});
+
+Deno.test("출석 비밀번호로 슬라이드 라우트를 열면 거부된다", async () => {
+  const sb = mockSb({ devices: null });
+  const pw = { "x-device-id": "DEV-UNKNOWN-99", "x-admin-password": SUPER_PASSWORD };
+  assertEquals((await resolveAdmin(sb, req("/api/admin/list", pw)))?.role, "super_admin");
+  assertEquals(await resolveAdmin(sb, req("/api/slides/deck", pw)), null);
+});
+
+Deno.test("소유자는 양쪽 다 열린다", async () => {
+  const sb = mockSb({}, {}, OWNER_EMAIL);
+  const auth = { authorization: "Bearer jwt" };
+  assertEquals((await resolveAdmin(sb, req("/api/admin/list", auth)))?.areas, ["attend", "slides"]);
+  assertEquals((await resolveAdmin(sb, req("/api/slides/deck", auth)))?.areas, ["attend", "slides"]);
 });
