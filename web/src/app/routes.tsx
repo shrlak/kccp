@@ -2,7 +2,7 @@ import { lazy, Suspense } from 'react'
 import { Routes, Route } from 'react-router-dom'
 import { AppShell } from './AppShell'
 import { RouteSplash } from './RouteSplash'
-import { CheckinScreen } from '../features/checkin/CheckinScreen'
+import { CheckinScreen } from '../areas/attend/checkin/CheckinScreen'
 import { NotFound } from './NotFound'
 
 // The landing page is the entry point for everyone, so it ships in the first chunk.
@@ -10,15 +10,15 @@ import { NotFound } from './NotFound'
 // (and, on demand, SheetJS and Chart.js), which a phone opening the landing page or the
 // kiosk should never have to download, parse, and execute first. The service worker
 // precaches these chunks, so the split costs a round trip only on a cold first visit.
-const AdminShell = lazy(() => import('../features/admin/AdminShell').then((m) => ({ default: m.AdminShell })))
-const KioskShell = lazy(() => import('../features/kiosk/KioskShell').then((m) => ({ default: m.KioskShell })))
+const AdminShell = lazy(() => import('../areas/attend/admin/AdminShell').then((m) => ({ default: m.AdminShell })))
+const KioskShell = lazy(() => import('../areas/attend/kiosk/KioskShell').then((m) => ({ default: m.KioskShell })))
 const ShareTargetScreen = lazy(() =>
-  import('../features/share/ShareTargetScreen').then((m) => ({ default: m.ShareTargetScreen })),
+  import('../areas/attend/share/ShareTargetScreen').then((m) => ({ default: m.ShareTargetScreen })),
 )
 // 동산지기가 링크로 여는 출석 화면. 로그인이 없고 관리자 패널의 코드도 필요 없으므로 자기
 // 조각으로 떨어뜨린다 — 리더의 폰이 명단 UI 전체를 내려받을 이유가 없다.
 const DongsanBoardScreen = lazy(() =>
-  import('../features/dongsan/DongsanBoardScreen').then((m) => ({ default: m.DongsanBoardScreen })),
+  import('../areas/attend/dongsan/DongsanBoardScreen').then((m) => ({ default: m.DongsanBoardScreen })),
 )
 
 // A reload stays where it was — the URL is the screen, and the admin session (sessionStorage

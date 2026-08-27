@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { ThemeLangToggle } from '../ui/ThemeLangToggle'
-import { KccpMark } from '../../features/checkin/KccpMark'
+import { KccpMark } from '../../areas/attend/checkin/KccpMark'
 
 // 두 잠금 화면(관리자 로그인 · 키오스크)이 함께 쓰는 껍데기 — 가운데 카드 하나.
 //

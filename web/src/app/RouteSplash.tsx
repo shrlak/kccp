@@ -1,4 +1,4 @@
-import { KccpMark } from '../features/checkin/KccpMark'
+import { KccpMark } from '../areas/attend/checkin/KccpMark'
 
 // Shown while a route's chunk is still arriving (see routes.tsx). Deliberately the same
 // mark-in-a-rounded-tile as the admin panel's "verifying" screen, so a cold load and a

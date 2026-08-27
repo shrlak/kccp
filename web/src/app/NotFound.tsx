@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Search, ArrowLeft } from '../components/ui/Icon'
-import { KccpMark } from '../features/checkin/KccpMark'
+import { KccpMark } from '../areas/attend/checkin/KccpMark'
 
 export function NotFound() {
   const { t } = useTranslation()

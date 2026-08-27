@@ -6,15 +6,15 @@
 // use site or the prefetch would warm a second copy of the chunk.
 
 export function prefetchAdmin(): void {
-  void import('../features/admin/AdminShell')
+  void import('../areas/attend/admin/AdminShell')
 }
 
 export function prefetchKiosk(): void {
-  void import('../features/kiosk/KioskShell')
+  void import('../areas/attend/kiosk/KioskShell')
 }
 
 export function prefetchShare(): void {
-  void import('../features/share/ShareTargetScreen')
+  void import('../areas/attend/share/ShareTargetScreen')
 }
 
 // Chart.js backs the 분석 탭 and is the heaviest thing inside the admin chunk — big enough

@@ -76,7 +76,7 @@ export interface AppConfig {
   summerMode: boolean
   // 부서 accent colors (hex, e.g. "#E0A800") — drives the 오늘 tab's name icons, the kiosk's
   // per-부서 tile backgrounds, and the 멤버 tab's per-부서 card backgrounds. Keyed by group
-  // name; falls back to DEFAULT_GROUP_COLORS (./features/admin/groupColors) for any group
+  // name; falls back to DEFAULT_GROUP_COLORS (./areas/attend/admin/groupColors) for any group
   // not present.
   groupColors: Record<string, string>
   // The recurring MM-DD template — the pattern every year falls back to. Optional until the

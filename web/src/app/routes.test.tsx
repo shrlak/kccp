@@ -14,10 +14,10 @@ beforeAll(async () => {
   // supabase-js and the entire admin tree, which on its own can outlast a findBy timeout
   // — the tests are about routing, not about module transform time.
   await Promise.all([
-    import('../features/admin/AdminShell'),
-    import('../features/kiosk/KioskShell'),
-    import('../features/share/ShareTargetScreen'),
-    import('../features/dongsan/DongsanBoardScreen'),
+    import('../areas/attend/admin/AdminShell'),
+    import('../areas/attend/kiosk/KioskShell'),
+    import('../areas/attend/share/ShareTargetScreen'),
+    import('../areas/attend/dongsan/DongsanBoardScreen'),
   ])
 })
 beforeEach(() => { queryClient.clear() })
