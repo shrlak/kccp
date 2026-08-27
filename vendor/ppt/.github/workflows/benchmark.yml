@@ -1,0 +1,128 @@
+name: Recognition Accuracy Benchmark
+
+# Measures real end-to-end recognition accuracy: renders synthetic 악보 pages
+# from library ground truth, runs them through the app's Gemini engine with
+# the repo's shared key, and reports per-song and mean accuracy. Run manually
+# from the Actions tab (or via the API) — it spends Gemini free-tier quota,
+# so it never runs automatically.
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: 'Model(s) to benchmark — comma-separated list runs the ensemble path'
+        default: 'gemini-2.5-flash,gemini-2.0-flash'
+        type: string
+      count:
+        description: 'Number of songs'
+        default: '50'
+        type: string
+      batch:
+        description: 'Pages per request'
+        default: '10'
+        type: string
+      search:
+        description: 'Enable Google Search grounding (1/0)'
+        default: '0'
+        type: string
+  # Pushing a bench/* branch also runs a trial (with the defaults below, or
+  # the values in bench/trial-config.json when present) — useful for agents
+  # without workflow-dispatch permission.
+  push:
+    branches:
+      - 'bench/**'
+
+env:
+  BENCH_MODEL_INPUT: ${{ inputs.model || 'gemini-2.5-flash,gemini-2.0-flash' }}
+  BENCH_COUNT_INPUT: ${{ inputs.count || '50' }}
+  BENCH_BATCH_INPUT: ${{ inputs.batch || '10' }}
+  BENCH_SEARCH_INPUT: ${{ inputs.search || '0' }}
+
+jobs:
+  bench:
+    name: Benchmark
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Require the shared Gemini key
+        run: |
+          if [ -z "${{ secrets.GEMINI_API_KEY }}" ]; then
+            echo "::error::GEMINI_API_KEY repo secret is not set — the benchmark needs it."
+            exit 1
+          fi
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install Korean fonts
+        run: sudo apt-get update -q && sudo apt-get install -y -q fonts-noto-cjk
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Resolve trial parameters
+        id: params
+        run: |
+          MODEL="$BENCH_MODEL_INPUT"; COUNT="$BENCH_COUNT_INPUT"; BATCH="$BENCH_BATCH_INPUT"; SEARCH="$BENCH_SEARCH_INPUT"; CORPUS="synthetic"
+          if [ -f bench/trial-config.json ]; then
+            MODEL=$(node -p "JSON.parse(require('fs').readFileSync('bench/trial-config.json','utf8')).model ?? '$MODEL'")
+            CORPUS=$(node -p "JSON.parse(require('fs').readFileSync('bench/trial-config.json','utf8')).corpus ?? '$CORPUS'")
+            COUNT=$(node -p "JSON.parse(require('fs').readFileSync('bench/trial-config.json','utf8')).count ?? '$COUNT'")
+            BATCH=$(node -p "JSON.parse(require('fs').readFileSync('bench/trial-config.json','utf8')).batch ?? '$BATCH'")
+            SEARCH=$(node -p "JSON.parse(require('fs').readFileSync('bench/trial-config.json','utf8')).search ?? '$SEARCH'")
+          fi
+          echo "model=$MODEL" >> "$GITHUB_OUTPUT"
+          echo "count=$COUNT" >> "$GITHUB_OUTPUT"
+          echo "batch=$BATCH" >> "$GITHUB_OUTPUT"
+          echo "search=$SEARCH" >> "$GITHUB_OUTPUT"
+          echo "corpus=$CORPUS" >> "$GITHUB_OUTPUT"
+          echo "trial: model=$MODEL count=$COUNT batch=$BATCH search=$SEARCH corpus=$CORPUS"
+
+      # 'synthetic' renders pages from library.json; 'real' scores the
+      # hand-verified scans in bench/corpus/truth.json instead. The real corpus
+      # is both the honest measurement and by far the cheaper one — 20 pages is
+      # a single request at batch 25.
+      - name: Generate score pages
+        if: steps.params.outputs.corpus == 'synthetic'
+        run: node bench/generate-scores.mjs --count ${{ steps.params.outputs.count }}
+
+      - name: Fetch the real 악보 corpus
+        if: steps.params.outputs.corpus == 'real'
+        run: |
+          node bench/corpus/fetch-corpus.mjs --truth true
+          node bench/corpus/build-manifest.mjs --out bench/out
+
+      - name: Run benchmark
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          BENCH_MODELS: ${{ steps.params.outputs.model }}
+          BENCH_BATCH: ${{ steps.params.outputs.batch }}
+          BENCH_SEARCH: ${{ steps.params.outputs.search }}
+        run: npx vite-node bench/run-bench.ts
+
+      - name: Publish summary
+        if: always()
+        run: |
+          if [ -f bench/out/summary.md ]; then
+            cat bench/out/summary.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload report and pages
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-report-${{ github.run_number }}
+          path: |
+            bench/out/report.json
+            bench/out/summary.md
+            bench/out/manifest.json
+            bench/out/pages/score-0*.png
+          if-no-files-found: warn

@@ -1,0 +1,165 @@
+// Left-hand slide list for the 편집기 (PPT editor) view — a PowerPoint-style
+// slide pane showing a real visual thumbnail of every slide in final deck
+// order (from pptxRenderer.ts), not just a text label. Editable content and
+// post-End uploads scroll the right-hand editor to that exact section; the
+// rest (front/prayer/back) are informational, since they come from fixed
+// templates rather than being edited here. A toolbar above the list lets the
+// whole deck be downloaded or saved to the 라이브러리 without leaving this view,
+// with the auto-save status right below it.
+import type { DeckOverviewItem } from '../lib/utils/deckOverview';
+import type { RenderedSlide } from '../lib/pptx/pptxRenderer';
+import type { AutoSaveStatus } from '../lib/storage/deckAutoSave';
+import AutoSaveIndicator from './AutoSaveIndicator';
+import SlideThumbnail from './SlideThumbnail';
+import Icon, { type IconName } from './Icon';
+
+const KIND_ICON: Record<DeckOverviewItem['kind'], IconName> = {
+  front: 'slide',
+  'lyrics-title': 'music',
+  lyrics: 'lyrics',
+  prayer: 'prayer',
+  bible: 'bible',
+  sermon: 'sermon',
+  divider: 'divider',
+  announcement: 'announcement',
+  back: 'slide',
+  additional: 'file',
+};
+
+const CLICKABLE_KINDS: ReadonlySet<DeckOverviewItem['kind']> = new Set([
+  'lyrics-title',
+  'lyrics',
+  'bible',
+  'sermon',
+  'announcement',
+  'additional',
+]);
+
+const THUMB_WIDTH = 248;
+
+interface Props {
+  overview: DeckOverviewItem[];
+  slides: RenderedSlide[] | null;
+  loading: boolean;
+  error: string | null;
+  onSelectSong: (songId: string) => void;
+  onSelectBible: () => void;
+  onSelectSermon: () => void;
+  onSelectAnnouncement: () => void;
+  onSelectAdditional: () => void;
+  onDownload: () => void;
+  onSaveToLibrary: () => void;
+  downloading: boolean;
+  savingToLibrary: boolean;
+  autoSaveStatus: AutoSaveStatus;
+}
+
+export default function SlideOverviewList({
+  overview,
+  slides,
+  loading,
+  error,
+  onSelectSong,
+  onSelectBible,
+  onSelectSermon,
+  onSelectAnnouncement,
+  onSelectAdditional,
+  onDownload,
+  onSaveToLibrary,
+  downloading,
+  savingToLibrary,
+  autoSaveStatus,
+}: Props) {
+  return (
+    <aside className="slide-overview" data-testid="slide-overview">
+      <div className="slide-overview-header">
+        <h2 className="slide-overview-title">슬라이드{slides ? ` (${slides.length})` : ''}</h2>
+        <div className="slide-overview-actions">
+          {/* Both toolbar actions share one size token, so the pair lines up
+              exactly instead of one sitting taller than the other. */}
+          <button
+            type="button"
+            className="btn"
+            data-testid="editor-save-to-library"
+            disabled={savingToLibrary}
+            onClick={onSaveToLibrary}
+          >
+            <Icon name="save" />
+            {savingToLibrary ? '저장 중…' : '저장'}
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary"
+            data-testid="editor-generate-pptx"
+            disabled={downloading}
+            onClick={onDownload}
+          >
+            <Icon name="download" />
+            {downloading ? '생성 중…' : '다운로드'}
+          </button>
+        </div>
+      </div>
+      <AutoSaveIndicator status={autoSaveStatus} testId="editor-auto-save-status" />
+      {error && (
+        <p className="banner banner-warn slide-overview-error">
+          <Icon name="warning" />
+          <span className="banner-text">{error}</span>
+        </p>
+      )}
+      {overview.length === 0 && !loading ? (
+        <p className="empty-hint">콘티나 광고를 입력하면 여기에 슬라이드 목록이 표시됩니다.</p>
+      ) : (
+        <ol className="slide-overview-list">
+          {overview.map((item, index) => {
+            const clickable = CLICKABLE_KINDS.has(item.kind);
+            const body = (
+              <>
+                <SlideThumbnail slide={slides?.[index]} width={THUMB_WIDTH} />
+                <span className="slide-overview-text">
+                  <span className="slide-overview-text-top">
+                    <span className="slide-overview-number">{index + 1}</span>
+                    <span className="slide-overview-icon">
+                      <Icon name={KIND_ICON[item.kind]} />
+                    </span>
+                    <span className="slide-overview-label">{item.label}</span>
+                  </span>
+                  {item.subtitle && <span className="slide-overview-subtitle">{item.subtitle}</span>}
+                </span>
+              </>
+            );
+            return (
+              <li
+                key={item.id}
+                className={`slide-overview-row${clickable ? ' clickable' : ''}`}
+                data-testid={`slide-overview-row-${item.kind}`}
+              >
+                {clickable ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (item.kind === 'announcement') onSelectAnnouncement();
+                      else if (item.kind === 'additional') onSelectAdditional();
+                      else if (item.kind === 'bible') onSelectBible();
+                      else if (item.kind === 'sermon') onSelectSermon();
+                      else onSelectSong(item.songId!);
+                    }}
+                  >
+                    {body}
+                  </button>
+                ) : (
+                  <div className="slide-overview-static">{body}</div>
+                )}
+              </li>
+            );
+          })}
+          {loading && (
+            <li className="slide-overview-loading" data-testid="slide-overview-loading">
+              <span className="spinner" aria-hidden="true" />
+              슬라이드 생성 중…
+            </li>
+          )}
+        </ol>
+      )}
+    </aside>
+  );
+}

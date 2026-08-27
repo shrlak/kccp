@@ -1,0 +1,221 @@
+import { useEffect, useRef, useState } from 'react';
+import { TRANSLATIONS } from '../bible/books';
+import { parseVerseInput, displayRef } from '../bible/refParser';
+import { showToast } from '../lib/utils/toast';
+import Icon from './Icon';
+
+const KO_TRANSLATIONS = TRANSLATIONS.filter((t) => t.language === 'ko');
+const EN_TRANSLATIONS = TRANSLATIONS.filter((t) => t.language === 'en');
+
+export interface BibleGeneratorState {
+  verseInput: string;
+  sermonTitle: string;
+  translations: string[];
+  versesPerSlide: number;
+  customTemplate: { name: string; data: ArrayBuffer } | null;
+}
+
+interface Props {
+  /** Fired whenever any input changes, so the parent can build the combined deck. */
+  onStateChange: (state: BibleGeneratorState) => void;
+  autoFillVersion?: number;
+  autoVerseInput?: string;
+  autoSermonTitle?: string;
+  /** Bumped when a 라이브러리 deck is reopened, to push its saved inputs back in. */
+  restoreVersion?: number;
+  restoreState?: Omit<BibleGeneratorState, 'customTemplate'> | null;
+}
+
+export default function BibleSlideGenerator({
+  onStateChange,
+  autoFillVersion = 0,
+  autoVerseInput = '',
+  autoSermonTitle = '',
+  restoreVersion = 0,
+  restoreState = null,
+}: Props) {
+  const [verseInput, setVerseInput] = useState('');
+  const [sermonTitle, setSermonTitle] = useState('');
+  const [koTranslation, setKoTranslation] = useState('nkrv');
+  const [enTranslation, setEnTranslation] = useState<string | null>('esv');
+  const [versesPerSlide, setVersesPerSlide] = useState(1);
+  const [customTemplate, setCustomTemplate] = useState<{ name: string; data: ArrayBuffer } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const { invalidTokens } = verseInput.trim() ? parseVerseInput(verseInput) : { invalidTokens: [] as string[] };
+  const previewTokens = verseInput.trim().split(/\s+/).filter(Boolean);
+  const translations = enTranslation ? [koTranslation, enTranslation] : [koTranslation];
+
+  useEffect(() => {
+    if (autoFillVersion === 0) return;
+    setVerseInput(autoVerseInput);
+    setSermonTitle(autoSermonTitle);
+    showToast('찬양 콘티의 본문과 설교 제목을 자동으로 채웠습니다.');
+  }, [autoFillVersion, autoVerseInput, autoSermonTitle]);
+
+  // Reopening a saved deck replaces every input this step owns. The custom
+  // template is not restored — it is a per-session override, so a reopened
+  // deck falls back to the standard 성경 template.
+  useEffect(() => {
+    if (restoreVersion === 0 || !restoreState) return;
+    setVerseInput(restoreState.verseInput);
+    setSermonTitle(restoreState.sermonTitle);
+    const ko = restoreState.translations.find((id) => KO_TRANSLATIONS.some((t) => t.id === id));
+    const en = restoreState.translations.find((id) => EN_TRANSLATIONS.some((t) => t.id === id));
+    if (ko) setKoTranslation(ko);
+    setEnTranslation(en ?? null);
+    setVersesPerSlide(Math.max(1, restoreState.versesPerSlide));
+    setCustomTemplate(null);
+    // Only a version bump restores; `restoreState` alone changing identity must not.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [restoreVersion]);
+
+  useEffect(() => {
+    onStateChange({ verseInput, sermonTitle, translations, versesPerSlide, customTemplate });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [verseInput, sermonTitle, translations.join(','), versesPerSlide, customTemplate, onStateChange]);
+
+  async function handleTemplateUpload(file: File) {
+    if (!file.name.endsWith('.pptx')) return;
+    const data = await file.arrayBuffer();
+    setCustomTemplate({ name: file.name, data });
+    showToast(`'${file.name}' 템플릿을 이번 세션에서 사용합니다.`);
+  }
+
+  return (
+    <div className="tool">
+      <section className="card">
+        <h3>
+          <span className="step">1</span> 성경 구절
+        </h3>
+        <input
+          className="verse-input"
+          data-testid="bible-verse-input"
+          type="text"
+          aria-label="성경 구절"
+          placeholder="행1:8-10 요3:16 롬8:28"
+          value={verseInput}
+          onChange={(e) => setVerseInput(e.target.value)}
+        />
+        <p className="input-hint">공백으로 구분해서 여러 구절을 입력할 수 있습니다.</p>
+        {previewTokens.length > 0 && (
+          <div className="verse-preview" data-testid="bible-verse-preview">
+            {previewTokens.map((t, i) => {
+              const ok = !invalidTokens.includes(t);
+              return (
+                <div key={i} className={`verse-preview-item${ok ? '' : ' invalid'}`}>
+                  <Icon name={ok ? 'check' : 'error'} />
+                  <span>
+                    {displayRef(t)}
+                    {ok ? '' : ' — 인식할 수 없는 구절입니다'}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      <section className="card">
+        <h3>
+          <span className="step">2</span> 설교 제목 &amp; 번역본
+        </h3>
+        <input
+          className="verse-input"
+          data-testid="bible-sermon-title-input"
+          type="text"
+          aria-label="설교 제목"
+          placeholder="설교 제목을 입력하세요 (선택)"
+          value={sermonTitle}
+          onChange={(e) => setSermonTitle(e.target.value)}
+        />
+
+        <div className="lang-group">
+          <span className="lang-label" id="ko-translation-label">
+            한국어
+          </span>
+          <div className="translations" role="radiogroup" aria-labelledby="ko-translation-label">
+            {KO_TRANSLATIONS.map((t) => (
+              <label key={t.id} className={`chip chip-radio${koTranslation === t.id ? ' active' : ''}`}>
+                <input
+                  type="radio"
+                  name="ko-translation"
+                  checked={koTranslation === t.id}
+                  onChange={() => setKoTranslation(t.id)}
+                />
+                {t.name}
+              </label>
+            ))}
+          </div>
+        </div>
+        <div className="lang-group">
+          <span className="lang-label" id="en-translation-label">
+            English
+          </span>
+          <div className="translations" role="group" aria-labelledby="en-translation-label">
+            {EN_TRANSLATIONS.map((t) => (
+              // English is optional and can be switched back off, which a radio
+              // cannot express — and the old label/preventDefault pair could not
+              // be reached by keyboard at all. A real toggle carries both.
+              <button
+                key={t.id}
+                type="button"
+                className={`chip chip-radio${enTranslation === t.id ? ' active' : ''}`}
+                aria-pressed={enTranslation === t.id}
+                onClick={() => setEnTranslation((prev) => (prev === t.id ? null : t.id))}
+              >
+                {t.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="card">
+        <h3>
+          <span className="step">3</span> 옵션
+        </h3>
+        <div className="option-row">
+          <label htmlFor="bible-verses-per-slide">슬라이드당 절 수</label>
+          <input
+            id="bible-verses-per-slide"
+            className="number-input"
+            type="number"
+            min={1}
+            max={10}
+            value={versesPerSlide}
+            onChange={(e) => setVersesPerSlide(Math.max(1, parseInt(e.target.value, 10) || 1))}
+          />
+        </div>
+
+        <div className="template-row">
+          <span className="input-hint">
+            {customTemplate ? `커스텀 템플릿: ${customTemplate.name}` : '기본 템플릿 사용 중'}
+          </span>
+          <button type="button" className="btn" onClick={() => fileInputRef.current?.click()}>
+            <Icon name="upload" />
+            {customTemplate ? '템플릿 변경' : '내 템플릿 업로드'}
+          </button>
+          {customTemplate && (
+            <button type="button" className="btn btn-ghost" onClick={() => setCustomTemplate(null)}>
+              기본으로 복원
+            </button>
+          )}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".pptx"
+            data-testid="bible-template-input"
+            className="visually-hidden-input"
+            tabIndex={-1}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) void handleTemplateUpload(file);
+              e.target.value = '';
+            }}
+          />
+        </div>
+      </section>
+    </div>
+  );
+}

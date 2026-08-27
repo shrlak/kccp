@@ -1,0 +1,280 @@
+// Generate synthetic 악보 (sheet-music) pages for the recognition accuracy
+// benchmark. Each page is rendered from a real library song (title, key,
+// order, sections) laid out like a scanned worship score: heading with the
+// key, the 진행 순서 line, then five-line staves with note heads and the
+// lyric syllables hyphenated underneath — exactly the structures the AI has
+// to read back, including parts that repeat being printed as stacked,
+// verse-numbered lyric rows under one shared staff. The generator is
+// deterministic (seeded per song index), so a trial is reproducible, and it
+// writes a manifest.json with the ground truth every page was rendered from.
+//
+// Usage: node bench/generate-scores.mjs [--count 50] [--out bench/out] [--width 1240]
+//        [--style scan|clean] [--stacked on|off]
+// Requires a Korean font (Noto Sans KR / Noto Sans CJK KR) and the
+// repo-configured Playwright Chromium.
+import { createRequire } from 'node:module';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+const require = createRequire(import.meta.url);
+const { chromium } = require('@playwright/test');
+
+const args = Object.fromEntries(
+  process.argv.slice(2).map((arg, i, all) => (arg.startsWith('--') ? [arg.slice(2), all[i + 1]] : [])).filter((p) => p.length),
+);
+const COUNT = Number(args.count ?? 50);
+const OUT = args.out ?? 'bench/out';
+const WIDTH = Number(args.width ?? 1240);
+// 'scan' (default) mimics real 악보 images found on the web: chord symbols
+// above the staves, mixed serif/sans typography, paper tint, slight page
+// rotation, and scan noise. 'clean' keeps the pristine white render used by
+// the first benchmark trials.
+const STYLE = args.style ?? 'scan';
+// 'on' (default) prints parts that repeat (V/V2, C/C2) as stacked, verse-
+// numbered lyric rows under shared staves — the real-world layout the
+// recognition pipeline used to merge into one verse. 'off' restores the
+// one-row-per-staff layout the first benchmark trials used.
+const STACKED = args.stacked ?? 'on';
+
+const CHORDS = ['C', 'D', 'E', 'F', 'G', 'A', 'Bm', 'Em', 'Am', 'F#m', 'G/B', 'Dm7', 'Am7', 'C/E', 'Gsus4', 'D7'];
+
+/** Deterministic PRNG so page layouts are reproducible across trials. */
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** Hyphenate a lyric line the way scores split syllables across notes. */
+function hyphenate(line) {
+  return line
+    .split(/\s+/)
+    .map((word) => {
+      const chars = [...word];
+      // Split multi-syllable Hangul words note-by-note: 찬양해 → 찬-양-해.
+      if (chars.length >= 2 && chars.every((ch) => /[가-힣]/.test(ch))) return chars.join('-');
+      return word;
+    })
+    .join(' ');
+}
+
+function escapeHtml(text) {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/** One five-line staff with note heads and chord symbols, as inline SVG. */
+function staffSvg(rand, width) {
+  const height = 82;
+  const lineGap = 9;
+  const top = 28;
+  // Chord symbols above the measures — the classic contamination hazard when
+  // extracting lyrics from real scores.
+  const chords = [];
+  const chordCount = 3 + Math.floor(rand() * 3);
+  for (let i = 0; i < chordCount; i++) {
+    const x = 50 + ((width - 100) / chordCount) * i + rand() * 20;
+    chords.push(
+      `<text x="${x.toFixed(1)}" y="16" font-size="15" font-weight="700" font-family="Arial, sans-serif">${
+        CHORDS[Math.floor(rand() * CHORDS.length)]
+      }</text>`,
+    );
+  }
+  const lines = Array.from(
+    { length: 5 },
+    (_, i) => `<line x1="0" y1="${top + i * lineGap}" x2="${width}" y2="${top + i * lineGap}" stroke="#222" stroke-width="1"/>`,
+  ).join('');
+  const notes = [];
+  const count = 8 + Math.floor(rand() * 6);
+  for (let i = 0; i < count; i++) {
+    const x = 40 + ((width - 80) / count) * i + rand() * 14;
+    const y = top + Math.floor(rand() * 9) * (lineGap / 2);
+    const stemUp = y > top + 2 * lineGap;
+    notes.push(
+      `<ellipse cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" rx="5.2" ry="4" fill="#111" transform="rotate(-18 ${x.toFixed(1)} ${y.toFixed(1)})"/>`,
+      `<line x1="${(x + (stemUp ? 5 : -5)).toFixed(1)}" y1="${y.toFixed(1)}" x2="${(x + (stemUp ? 5 : -5)).toFixed(1)}" y2="${(y + (stemUp ? -26 : 26)).toFixed(1)}" stroke="#111" stroke-width="1.4"/>`,
+    );
+  }
+  const clef = `<text x="8" y="${top + 4 * lineGap - 2}" font-size="40" font-family="serif">𝄞</text>`;
+  return `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">${chords.join('')}${lines}${clef}${notes.join('')}</svg>`;
+}
+
+/** Low-opacity turbulence overlay that reads like scanner grain. */
+function noiseOverlay(seed) {
+  return `
+    <svg class="noise" xmlns="http://www.w3.org/2000/svg">
+      <filter id="grain"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="${seed}"/></filter>
+      <rect width="100%" height="100%" filter="url(#grain)" opacity="0.05"/>
+    </svg>`;
+}
+
+/**
+ * How many lyric rows a real 악보 will stack under one staff. Hymn-style scores
+ * go up to four verses; past that the stanzas are printed as separate labeled
+ * blocks instead. Capping keeps a 7-verse song from being rendered as seven
+ * rows crammed under every staff, which no printed score does and which would
+ * make the benchmark harder than the pages this pipeline actually sees.
+ */
+const MAX_STACKED_ROWS = 4;
+
+/**
+ * Group the parts that a real score would print as stacked lyric rows under
+ * shared staves: consecutive sections of the same family (V/V2/V3, C/C2…) with
+ * the same number of lines, up to MAX_STACKED_ROWS per block. This is the
+ * layout the recognition pipeline gets wrong most often — reading the rows
+ * left-to-right merges 1절 into 2절 — so the benchmark has to contain it or it
+ * cannot see the regression.
+ * Disable with --stacked off to reproduce the older one-row-per-staff trials.
+ */
+function groupStackedSections(sections) {
+  if (STACKED === 'off') return sections.map((section) => [section]);
+  const groups = [];
+  for (const section of sections) {
+    const last = groups[groups.length - 1];
+    const sameShape =
+      last &&
+      partFamily(last[0].label) === partFamily(section.label) &&
+      last[0].lines.length === section.lines.length &&
+      last.length < MAX_STACKED_ROWS;
+    if (sameShape) last.push(section);
+    else groups.push([section]);
+  }
+  return groups;
+}
+
+function partFamily(label) {
+  return label.trim().toUpperCase().replace(/\d+$/, '');
+}
+
+/**
+ * What a stacked block prints in the left label column. Numbered verses carry
+ * their number on each row instead, so the column stays empty — but a repeated
+ * chorus or bridge keeps its label, which is how printed scores mark where one
+ * stacked block ends and the next begins. Leaving every block unlabeled removed
+ * that cue and made two adjacent blocks visually identical.
+ */
+function blockLabel(group) {
+  if (group.length === 1) return group[0].label;
+  return partFamily(group[0].label) === 'V' ? '' : partFamily(group[0].label);
+}
+
+function pageHtml(song, seed, width) {
+  const rand = mulberry32(seed);
+  const bodyFont = 18 + Math.floor(rand() * 4);
+  const staffWidth = width - 120;
+  const scan = STYLE === 'scan';
+  // Alternate typography per song like real score sites do.
+  const serif = scan && rand() < 0.4;
+  const fontStack = serif
+    ? "'Noto Serif KR', 'Noto Serif CJK KR', serif"
+    : "'Noto Sans KR', 'Noto Sans CJK KR', sans-serif";
+  const rotation = scan ? (rand() - 0.5) * 0.8 : 0;
+  const paper = scan ? '#fcfbf6' : '#fff';
+  const sections = groupStackedSections(song.sections)
+    .map((group) => {
+      // One staff per line position, with every verse's line for that position
+      // stacked underneath it — the layout real scores use for 1절/2절.
+      const rowCount = Math.max(...group.map((section) => section.lines.length));
+      const rows = Array.from({ length: rowCount }, (_, row) => {
+        const stacked = group
+          .map((section, verse) =>
+            section.lines[row] === undefined
+              ? ''
+              : `<div class="lyric">${
+                  group.length > 1 ? `<span class="verse-no">${verse + 1}.</span> ` : ''
+                }${escapeHtml(hyphenate(section.lines[row]))}</div>`,
+          )
+          .join('');
+        return `
+            <div class="staff-row">
+              ${staffSvg(rand, staffWidth)}
+              ${stacked}
+            </div>`;
+      }).join('');
+      const label = escapeHtml(blockLabel(group));
+      return `
+        <div class="section">
+          <div class="section-label">${label}</div>
+          <div class="section-body">${rows}</div>
+        </div>`;
+    })
+    .join('');
+
+  return `<!doctype html><html><head><meta charset="utf-8"><style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { width: ${width}px; background: ${paper}; color: #151515;
+           font-family: ${fontStack}; padding: 44px 48px 60px; position: relative; }
+    .page { transform: rotate(${rotation.toFixed(2)}deg); }
+    .noise { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+    .head { text-align: center; margin-bottom: 6px; position: relative; }
+    .title { font-size: 34px; font-weight: 700; }
+    .key { position: absolute; right: 0; top: 8px; font-size: 20px; font-weight: 700; }
+    .order { text-align: center; font-size: 19px; letter-spacing: 1px; margin: 10px 0 22px; font-weight: 700; }
+    .section { display: flex; gap: 14px; margin-bottom: 12px; }
+    .section-label { width: 44px; font-size: 21px; font-weight: 700; padding-top: 30px; }
+    .section-body { flex: 1; }
+    .staff-row { margin-bottom: 4px; }
+    .verse-no { font-weight: 700; }
+    .lyric { font-size: ${bodyFont}px; margin: 0 0 8px 42px; letter-spacing: 0.5px; }
+  </style></head><body>
+    <div class="page">
+      <div class="head">
+        <div class="title">${escapeHtml(song.title)}</div>
+        ${song.key ? `<div class="key">Key: ${escapeHtml(song.key)}</div>` : ''}
+      </div>
+      <div class="order">${song.order.map(escapeHtml).join(' - ')}</div>
+      ${sections}
+    </div>
+    ${scan ? noiseOverlay(seed) : ''}
+  </body></html>`;
+}
+
+async function main() {
+  const library = JSON.parse(readFileSync('public/library.json', 'utf8'));
+  const usable = library.filter(
+    (entry) =>
+      Array.isArray(entry.sections) &&
+      entry.sections.length > 0 &&
+      Array.isArray(entry.order) &&
+      entry.order.length > 0 &&
+      entry.sections.every((section) => Array.isArray(section.lines) && section.lines.length > 0),
+  );
+  // Deterministic spread across the library so trials always use the same songs.
+  const step = Math.max(1, Math.floor(usable.length / COUNT));
+  const songs = Array.from({ length: Math.min(COUNT, usable.length) }, (_, i) => usable[(i * step) % usable.length]);
+
+  mkdirSync(join(OUT, 'pages'), { recursive: true });
+  const browser = await chromium.launch({
+    executablePath: process.env.CHROMIUM_PATH || undefined,
+  });
+  const page = await browser.newPage({ viewport: { width: WIDTH, height: 1600 } });
+
+  const manifest = [];
+  for (let i = 0; i < songs.length; i++) {
+    const song = songs[i];
+    const truth = {
+      index: i,
+      file: `pages/score-${String(i).padStart(2, '0')}.png`,
+      title: song.title,
+      key: song.key ?? '',
+      order: song.order,
+      sections: song.sections.map((section) => ({
+        label: section.label,
+        lines: section.lines.map((line) => line.trim()).filter(Boolean),
+      })),
+    };
+    await page.setContent(pageHtml(truth, i + 1, WIDTH), { waitUntil: 'networkidle' });
+    await page.screenshot({ path: join(OUT, truth.file), fullPage: true });
+    manifest.push(truth);
+    if ((i + 1) % 10 === 0) console.log(`rendered ${i + 1}/${songs.length}`);
+  }
+  await browser.close();
+  writeFileSync(join(OUT, 'manifest.json'), JSON.stringify(manifest, null, 2));
+  console.log(`generated ${manifest.length} score pages in ${OUT}`);
+}
+
+await main();

@@ -1,0 +1,250 @@
+// Pure usage-metering helpers shared by the Worker and its unit tests.
+// Gemini and OpenRouter free tiers are request-limited per day, while Hugging
+// Face's included Inference Providers allowance is a monthly dollar credit.
+// Provider dashboards remain authoritative; this
+// module maintains the app's own counter because none of these APIs exposes a
+// portable "remaining credit" API.
+
+export const DEFAULT_GEMINI_MODEL = 'gemini-3.6-flash';
+export const DEFAULT_NVIDIA_MODEL = 'nvidia/nemotron-nano-12b-v2-vl';
+export const DEFAULT_OPENROUTER_MODEL = 'nvidia/nemotron-nano-12b-v2-vl:free';
+export const DEFAULT_GEMINI_DAILY_REQUEST_LIMIT = 250;
+export const DEFAULT_OPENROUTER_DAILY_REQUEST_LIMIT = 50;
+// build.nvidia.com grants free API credits (1 credit = 1 request). The pool
+// is per-account rather than per-month; the monthly bar is a pacing guide.
+export const DEFAULT_NVIDIA_MONTHLY_REQUEST_LIMIT = 1000;
+// Hugging Face bills hf-inference by compute time x hardware price. This
+// default mirrors the public pricing example and is deliberately configurable.
+
+const PROVIDERS = new Set(['gemini', 'openrouter', 'nvidia']);
+
+/** Stable display/sort order for the usage dashboard. */
+const PROVIDER_RANK = { gemini: 0, openrouter: 1, nvidia: 2 };
+
+function finiteNonNegative(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : fallback;
+}
+
+function positiveNumber(value, fallback) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : fallback;
+}
+
+/** Calendar date in the Pacific timezone where Gemini's RPD quota resets. */
+export function pacificDateKey(value = new Date()) {
+  const date = value instanceof Date ? value : new Date(value);
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Los_Angeles',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+  const part = (type) => parts.find((item) => item.type === type)?.value || '';
+  return `${part('year')}-${part('month')}-${part('day')}`;
+}
+
+/** Calendar date in UTC, used for OpenRouter's daily free-model allowance. */
+export function utcDateKey(value = new Date()) {
+  const date = value instanceof Date ? value : new Date(value);
+  return date.toISOString().slice(0, 10);
+}
+
+/** Hugging Face's included credit is monthly, so group it by UTC month. */
+export function utcMonthKey(value = new Date()) {
+  const date = value instanceof Date ? value : new Date(value);
+  return date.toISOString().slice(0, 7);
+}
+
+export function usagePeriod(provider, value = new Date()) {
+  if (provider === 'gemini') {
+    return { period: 'day', periodKey: pacificDateKey(value) };
+  }
+  if (provider === 'openrouter') {
+    return { period: 'day', periodKey: utcDateKey(value) };
+  }
+  // NVIDIA credits and Hugging Face credit are both tracked per UTC month.
+  return { period: 'month', periodKey: utcMonthKey(value) };
+}
+
+export function sanitizeUsageEvent(raw, now = new Date()) {
+  const provider = typeof raw?.provider === 'string' ? raw.provider : '';
+  const model = typeof raw?.model === 'string' ? raw.model.trim() : '';
+  if (!PROVIDERS.has(provider) || !model) {
+    throw new Error('invalid AI usage event');
+  }
+  const timestamp = new Date(raw?.timestamp || now);
+  if (Number.isNaN(timestamp.getTime())) throw new Error('invalid AI usage timestamp');
+  const computeSource = raw?.computeSource === 'provider' ? 'provider' : 'wall';
+  return {
+    provider,
+    model,
+    success: raw?.success === true,
+    timestamp: timestamp.toISOString(),
+    promptTokens: Math.round(finiteNonNegative(raw?.promptTokens)),
+    outputTokens: Math.round(finiteNonNegative(raw?.outputTokens)),
+    totalTokens: Math.round(finiteNonNegative(raw?.totalTokens)),
+    computeSeconds: finiteNonNegative(raw?.computeSeconds),
+    wallSeconds: finiteNonNegative(raw?.wallSeconds),
+    computeSource,
+  };
+}
+
+export function usageStorageKey(event) {
+  const { periodKey } = usagePeriod(event.provider, event.timestamp);
+  return `usage:${event.provider}:${periodKey}:${encodeURIComponent(event.model)}`;
+}
+
+export function mergeUsageRecord(current, rawEvent) {
+  const event = sanitizeUsageEvent(rawEvent);
+  const { period, periodKey } = usagePeriod(event.provider, event.timestamp);
+  const previous =
+    current &&
+    current.provider === event.provider &&
+    current.model === event.model &&
+    current.periodKey === periodKey
+      ? current
+      : {};
+  return {
+    provider: event.provider,
+    model: event.model,
+    period,
+    periodKey,
+    requests: finiteNonNegative(previous.requests) + 1,
+    successfulRequests: finiteNonNegative(previous.successfulRequests) + (event.success ? 1 : 0),
+    failedRequests: finiteNonNegative(previous.failedRequests) + (event.success ? 0 : 1),
+    promptTokens: finiteNonNegative(previous.promptTokens) + event.promptTokens,
+    outputTokens: finiteNonNegative(previous.outputTokens) + event.outputTokens,
+    totalTokens: finiteNonNegative(previous.totalTokens) + event.totalTokens,
+    computeSeconds: finiteNonNegative(previous.computeSeconds) + event.computeSeconds,
+    wallSeconds: finiteNonNegative(previous.wallSeconds) + event.wallSeconds,
+    providerMeasuredRequests:
+      finiteNonNegative(previous.providerMeasuredRequests) + (event.computeSource === 'provider' ? 1 : 0),
+    updatedAt: event.timestamp,
+  };
+}
+
+function emptyRecord(provider, model, now) {
+  const { period, periodKey } = usagePeriod(provider, now);
+  return {
+    provider,
+    model,
+    period,
+    periodKey,
+    requests: 0,
+    successfulRequests: 0,
+    failedRequests: 0,
+    promptTokens: 0,
+    outputTokens: 0,
+    totalTokens: 0,
+    computeSeconds: 0,
+    wallSeconds: 0,
+    providerMeasuredRequests: 0,
+    updatedAt: null,
+  };
+}
+
+/**
+ * Convert current-period records into the browser-facing, model-level view.
+ *
+ * `catalogModels` ({provider, model} pairs) lists every model the system can
+ * use; each one gets a card even before its first recorded request, so the
+ * 사용량 page always shows the complete model pool. Without it (older
+ * callers, tests) only the per-provider default models are guaranteed rows.
+ */
+export function buildUsageSnapshot(records, env = {}, now = new Date(), catalogModels = null) {
+  const geminiLimit = positiveNumber(
+    env.GEMINI_DAILY_REQUEST_LIMIT,
+    DEFAULT_GEMINI_DAILY_REQUEST_LIMIT,
+  );
+  const nvidiaLimit = positiveNumber(
+    env.NVIDIA_MONTHLY_REQUEST_LIMIT,
+    DEFAULT_NVIDIA_MONTHLY_REQUEST_LIMIT,
+  );
+  const openRouterLimit = positiveNumber(
+    env.OPENROUTER_DAILY_REQUEST_LIMIT,
+    DEFAULT_OPENROUTER_DAILY_REQUEST_LIMIT,
+  );
+  const defaultPairs = [
+    ...(Array.isArray(catalogModels) ? catalogModels : []),
+    { provider: 'gemini', model: env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL },
+    { provider: 'openrouter', model: env.OPENROUTER_MODEL || DEFAULT_OPENROUTER_MODEL },
+  ].filter((pair) => pair && PROVIDERS.has(pair.provider) && typeof pair.model === 'string' && pair.model);
+  const defaults = [];
+  const seenPairs = new Set();
+  for (const pair of defaultPairs) {
+    const key = `${pair.provider}:${pair.model}`;
+    if (seenPairs.has(key)) continue;
+    seenPairs.add(key);
+    defaults.push(emptyRecord(pair.provider, pair.model, now));
+  }
+  const current = Array.isArray(records)
+    ? records.filter((record) => {
+        if (!record || !PROVIDERS.has(record.provider)) return false;
+        return record.periodKey === usagePeriod(record.provider, now).periodKey;
+      })
+    : [];
+  const byModel = new Map(defaults.map((record) => [`${record.provider}:${record.model}`, record]));
+  for (const record of current) byModel.set(`${record.provider}:${record.model}`, record);
+
+  const models = [...byModel.values()]
+    .map((record) => {
+      const requests = finiteNonNegative(record.requests);
+      const common = {
+        provider: record.provider,
+        model: record.model,
+        period: record.period,
+        periodKey: record.periodKey,
+        requests,
+        successfulRequests: finiteNonNegative(record.successfulRequests),
+        failedRequests: finiteNonNegative(record.failedRequests),
+        promptTokens: finiteNonNegative(record.promptTokens),
+        outputTokens: finiteNonNegative(record.outputTokens),
+        totalTokens: finiteNonNegative(record.totalTokens),
+        computeSeconds: finiteNonNegative(record.computeSeconds),
+        providerMeasuredRequests: finiteNonNegative(record.providerMeasuredRequests),
+        updatedAt: record.updatedAt || null,
+      };
+      if (record.provider === 'gemini') {
+        return {
+          ...common,
+          metric: 'requests',
+          used: requests,
+          limit: geminiLimit,
+          estimated: false,
+        };
+      }
+      if (record.provider === 'openrouter') {
+        return {
+          ...common,
+          metric: 'requests',
+          used: requests,
+          limit: openRouterLimit,
+          estimated: false,
+        };
+      }
+      // build.nvidia.com charges one credit per request, so the request
+      // count IS the credit spend — no estimation involved. Only the three
+      // provider lanes in PROVIDERS reach this map, so nvidia is the total
+      // fallback rather than one more branch.
+      return {
+        ...common,
+        metric: 'requests',
+        used: requests,
+        limit: nvidiaLimit,
+        estimated: false,
+      };
+    })
+    .sort((a, b) => {
+      if (a.provider !== b.provider) {
+        return (PROVIDER_RANK[a.provider] ?? 9) - (PROVIDER_RANK[b.provider] ?? 9);
+      }
+      return a.model.localeCompare(b.model);
+    });
+
+  return {
+    generatedAt: now.toISOString(),
+    source: 'shared-proxy',
+    models,
+  };
+}
