@@ -7,8 +7,8 @@ import {
   recognizeBatchWithNvidia,
   recognizeWithNvidia,
   toImageDataUrl,
-} from '../../src/lib/ai/scoreNvidia';
-import { RecognitionError } from '../../src/lib/ai/recognitionError';
+} from './scoreNvidia';
+import { RecognitionError } from './recognitionError';
 
 const DATA_URL = 'data:image/jpeg;base64,QUJD';
 
@@ -87,7 +87,7 @@ describe('extractNvidiaText', () => {
 });
 
 describe('recognizeWithNvidia', () => {
-  it('calls OpenRouter directly with a bearer key and parses the JSON answer', async () => {
+  it('프록시를 지나 부르고 JSON 답을 읽는다', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(
         JSON.stringify(
@@ -105,14 +105,17 @@ describe('recognizeWithNvidia', () => {
     );
     vi.stubGlobal('fetch', fetchMock);
 
-    const score = await recognizeWithNvidia(DATA_URL, 'or-key');
+    const score = await recognizeWithNvidia(DATA_URL);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe('https://openrouter.ai/api/v1/chat/completions');
-    expect((init.headers as Record<string, string>).Authorization).toBe('Bearer or-key');
+    // 언제나 프록시를 지난다 — 브라우저가 OpenRouter를 직접 부르는 길은 없앴다.
+    expect(url).not.toContain('openrouter.ai');
+    expect(url).toContain('/api/slides/ai/openrouter');
+    // 카탈로그의 ID 를 그대로 보낸다. `:free` 로 고정하는 것은 서버의 일이고, 여기서
+    // 붙이면 두 곳이 같은 규칙을 각자 들고 있게 된다.
     expect(JSON.parse(String(init.body))).toMatchObject({
-      model: 'nvidia/nemotron-nano-12b-v2-vl:free',
+      model: 'nvidia/nemotron-nano-12b-v2-vl',
     });
     expect(score.title).toBe('주 은혜임을');
     expect(score.order).toEqual(['I', 'V1', 'C']);
@@ -126,10 +129,10 @@ describe('recognizeWithNvidia', () => {
       .mockResolvedValue(new Response(JSON.stringify(chatResponse('{"title":"t","sections":[]}')), { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);
 
-    await recognizeWithNvidia(DATA_URL, '', undefined, 'https://proxy.example/');
+    await recognizeWithNvidia(DATA_URL, undefined);
 
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe('https://proxy.example/openrouter');
+    expect(url).toContain('/api/slides/ai/openrouter');
     expect((init.headers as Record<string, string>).Authorization).toBeUndefined();
   });
 
@@ -171,7 +174,7 @@ describe('recognizeBatchWithNvidia', () => {
       vi.fn().mockResolvedValue(new Response(JSON.stringify(chatResponse(JSON.stringify(payload))), { status: 200 })),
     );
 
-    const scores = await recognizeBatchWithNvidia([DATA_URL, DATA_URL, DATA_URL], 'nv-key', 'titles');
+    const scores = await recognizeBatchWithNvidia([DATA_URL, DATA_URL, DATA_URL], 'titles');
 
     expect(scores).toHaveLength(3);
     expect(scores[0].title).toBe('첫째 곡');
@@ -183,7 +186,7 @@ describe('recognizeBatchWithNvidia', () => {
   it('returns an empty list without calling fetch for zero images', async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
-    await expect(recognizeBatchWithNvidia([], 'nv-key', 'full')).resolves.toEqual([]);
+    await expect(recognizeBatchWithNvidia([], 'full')).resolves.toEqual([]);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });

@@ -4,7 +4,7 @@ import {
   cleanScrapedLyricLines,
   normalizeRecognizedLyricLine,
   normalizeRecognizedLyricLines,
-} from '../../src/lib/lyrics/koreanSpelling';
+} from './koreanSpelling';
 
 describe('normalizeRecognizedLyricLine', () => {
   it('composes decomposed jamo from a model answer', () => {

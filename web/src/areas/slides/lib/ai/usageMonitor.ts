@@ -1,3 +1,5 @@
+import { getAiUsage } from './proxy';
+
 export type UsageProvider = 'gemini' | 'openrouter' | 'nvidia';
 export type UsageMetric = 'requests' | 'usd';
 
@@ -28,12 +30,16 @@ export interface AiUsageSnapshot {
   models: ModelUsage[];
 }
 
-function proxyUrl(): string | undefined {
-  return import.meta.env.VITE_RECOGNITION_PROXY_URL?.trim() || undefined;
-}
-
+/**
+ * 프록시는 이제 **언제나 있다.**
+ *
+ * ppt에서는 VITE_RECOGNITION_PROXY_URL 이 비어 있을 수 있었고(정적 사이트라 프록시를
+ * 붙이지 않고도 배포됐다), 그래서 이 물음이 필요했다. 합쳐진 앱에서 슬라이드 화면에
+ * 들어왔다는 것은 이미 'slides' 영역을 가진 계정으로 로그인했다는 뜻이고, 그 자격이
+ * 곧 프록시를 부를 자격이다.
+ */
 export function hasSharedUsageMonitor(): boolean {
-  return !!proxyUrl();
+  return true;
 }
 
 function nonNegativeNumber(value: unknown): number {
@@ -88,23 +94,20 @@ export function parseUsageSnapshot(raw: unknown): AiUsageSnapshot {
   };
 }
 
-export async function fetchAiUsage(signal?: AbortSignal): Promise<AiUsageSnapshot> {
-  const base = proxyUrl();
-  if (!base) throw new Error('공유 AI 프록시가 연결되지 않았습니다.');
-  const response = await fetch(`${base.replace(/\/$/, '')}/usage`, {
-    method: 'GET',
-    headers: { Accept: 'application/json' },
-    signal,
-  });
-  if (!response.ok) {
-    let detail = `HTTP ${response.status}`;
-    try {
-      const payload = (await response.json()) as { error?: string };
-      if (payload.error) detail = payload.error;
-    } catch {
-      // Keep the HTTP status when the proxy did not return JSON.
-    }
-    throw new Error(`AI 사용량을 불러오지 못했습니다: ${detail}`);
+/**
+ * 오늘의 무료 한도 사용량. 전송은 proxy.ts 가 맡는다 — 자격을 싣는 규칙(구글 토큰, 부)이
+ * 한 곳에만 있어야 뒤처지는 쪽이 생기지 않는다.
+ *
+ * `parseUsageSnapshot` 은 그대로 남는다: 서버가 모양을 바꿔도 화면이 먼저 무너지지 않게
+ * 하는 자리이고, 그 검사는 전송이 무엇이든 필요하다.
+ */
+export async function fetchAiUsage(): Promise<AiUsageSnapshot> {
+  try {
+    return parseUsageSnapshot(await getAiUsage());
+  } catch (error) {
+    throw new Error(
+      `AI 사용량을 불러오지 못했습니다: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
+    );
   }
-  return parseUsageSnapshot((await response.json()) as unknown);
 }

@@ -220,9 +220,42 @@ Worker가 존재한 이유의 나머지 절반. ppt에서 파일은 Durable Obje
   `SlideAssets.bibleBase`가 그 접두사만 넘긴다. 여기서 무심코 정적 import로 바꾸면
   27 MB가 첫 화면으로 딸려 온다.
 - 아직 오지 않은 것: 콘티 사진에서 가사를 읽어 내는 **AI 인식 화면**(`LyricsGenerator`
-  1,841줄 · `SongCard` 510줄 — `lib/learning`·`lib/storage`를 다시 지은 다음)과
-  **편집기 보기**(`SlideOverviewList` · `SlideThumbnail` — 없어도 슬라이드는
-  만들어진다). 프록시(`ai-proxy`)와 그 클라이언트는 이미 서 있다.
+  1,841줄 · `SongCard` 510줄)과 **편집기 보기**(`SlideOverviewList` ·
+  `SlideThumbnail` — 없어도 슬라이드는 만들어진다). 그 화면들이 부를
+  **라이브러리는 이미 다 와 있다** (아래).
+
+### 인식 라이브러리 — 키가 브라우저에 없다
+
+`lib/ai/`(3,672줄)와 `lib/lyrics/`가 건너왔다. 옮기고 보니 경계는 파일이 아니라
+**파일 안**에 있었다: `aiSettings.ts`는 위 300줄이 설정 모델이고 아래 100줄만
+localStorage + Worker 전송이었다. 그래서 파일째 옮기고 전송만 갈아 끼웠다.
+
+- **브라우저가 상류를 직접 부르는 길을 없앴다.** ppt에는 `geminiApiKey` ·
+  `openrouterApiKey` 칸이 있었다 — 프록시 없이 배포된 정적 사이트에서 사람이 자기
+  키를 붙여 쓰던 길이다. 그 길로는 **영역 검사도 무료 한도 계량도 지나가지 않는다.**
+  키 칸을 `AiSettings`에서 지웠고, `scoreAi`·`scoreNvidia`는 이제 `ai-proxy` 하나만
+  부른다. `scoreAi.test.ts`가 그 문장을 붙잡는다 (`generativelanguage.googleapis.com`
+  이 URL에 나오면 실패).
+- **`pushSharedSettings`에서 비밀번호 인자가 사라졌다.** 그 문자열은 로그인이 없던
+  앱의 무른 관문이었다(코드에 박혀 있었다). 지금은 서버가 최고관리자·소유자인지
+  본다 — 인자를 남겨 두면 아무것도 지키지 않으면서 지키는 것처럼 보인다.
+- **자격 헤더는 `lib/api.ts`의 `authHeaders()` 한 곳에서 만든다.** 인식만은 날
+  `Response`가 필요해서(429는 오늘 한도가 찬 것, 500은 그 모델이 이 쪽을 못 읽은
+  것 — 반응이 다르다) `apiAt`을 못 쓰는데, 그 하나 때문에 자격 규칙이 두 벌이 되면
+  뒤처지는 쪽이 생기고 뒤처진 쪽은 대개 **덜 실어 보내는** 쪽이라 알 수 없는 401로
+  나타난다.
+- **`aiSettings.test.ts`가 카탈로그를 서버와 맞춰 본다** — 짝이 Worker의
+  `config.js`에서 `ai-proxy/catalog.ts`로 바뀌었다. 어긋나면 화면이 프록시가 거절할
+  모델을 사람에게 권한다 (`partition.ts` ↔ `auth.ts` 와 같은 규칙).
+- **`webLyrics.ts`만 `vendor/ppt/`에 남는다.** Worker의 가사 스크레이핑 라우트를
+  부르는데 `ai-proxy`에 그 짝이 없다 — 순수하지 않은 것이 아니라 **옮길 자리가 아직
+  없는 것**이다. 그것을 물고 있는 `mergeWebLyrics`도 함께 남는다.
+- `lib/storage/library.ts`에서 재사용 판단 셋(`entryVerification` · `isGroundTruth` ·
+  `selectReusableEntry`)을 `lib/lyrics/songLibrary.ts`로 갈라냈다 —
+  `normalizeTitle`과 같은 모양이다. 배열이 어디서 오는지는 그 파일이 모른다.
+- 이 라이브러리들은 아직 **아무 화면도 import 하지 않으므로** 슬라이드 청크에 들어가지
+  않는다 (484.8 KiB 그대로). 인식 화면이 붙는 순간 늘어날 자리이고, 그때 예산 검사가
+  먼저 말한다.
 
 **청크 이름은 `vite.config.ts`가 정한다** (`chunkFileNames` → `assets/slides-[hash].js`).
 lazy import가 만든 경계에 안정된 이름만 붙이는 일이고, 그 이름으로 선캐시에서 뺀다.

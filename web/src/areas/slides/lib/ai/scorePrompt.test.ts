@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { BASE_PROMPT_LINES, basePrompt, correctionExampleLines } from '../../src/lib/ai/scorePrompt';
-import { buildGeminiBatchBody } from '../../src/lib/ai/scoreAi';
-import { buildOpenRouterBatchBody } from '../../src/lib/ai/scoreNvidia';
+import { BASE_PROMPT_LINES, basePrompt, correctionExampleLines } from './scorePrompt';
+import { buildGeminiBatchBody } from './scoreAi';
+import { buildOpenRouterBatchBody } from './scoreNvidia';
 
 const prompt = BASE_PROMPT_LINES.join('\n');
 

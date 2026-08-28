@@ -27,7 +27,6 @@ import { findSection, sortSectionsByOrder } from '../utils/slidePlanner';
  * the build at deploy time. Non-secret — safe to expose in client code, since
  * the actual API keys live only on the proxy server.
  */
-const PROXY_URL = import.meta.env.VITE_RECOGNITION_PROXY_URL?.trim() || undefined;
 
 /** Wait before the single transient-failure retry (rate limit bursts, 5xx). */
 const TRANSIENT_RETRY_DELAY_MS = 1500;
@@ -77,14 +76,10 @@ async function recognizeWithEngine(
   settings: AiSettings,
 ): Promise<ParsedScore> {
   if (attempt.engine === 'gemini') {
-    const key = settings.geminiApiKey.trim();
-    if (!key && !PROXY_URL) throw new Error('Gemini API 키가 설정되지 않았습니다.');
-    return recognizeWithGemini(dataUrl, key, attempt.model, settings.geminiUseSearch, PROXY_URL);
+    return recognizeWithGemini(dataUrl, attempt.model, settings.geminiUseSearch);
   }
   if (attempt.engine === 'openrouter') {
-    const key = settings.openrouterApiKey.trim();
-    if (!key && !PROXY_URL) throw new Error('OpenRouter API 키가 설정되지 않았습니다.');
-    return recognizeWithOpenRouter(dataUrl, key, attempt.model, PROXY_URL);
+    return recognizeWithOpenRouter(dataUrl, attempt.model);
   }
   throw new Error('자동 인식이 꺼져 있습니다.');
 }
@@ -126,23 +121,17 @@ async function recognizeBatchWithEngine(
   examples: PromptExample[] = [],
 ): Promise<ParsedScore[]> {
   if (attempt.engine === 'gemini') {
-    const key = settings.geminiApiKey.trim();
-    if (!key && !PROXY_URL) throw new Error('Gemini API 키가 설정되지 않았습니다.');
     return recognizeBatchWithGemini(
       dataUrls,
-      key,
       attempt.model,
       mode,
       mode === 'full' && settings.geminiUseSearch,
-      PROXY_URL,
       hints,
       examples,
     );
   }
   if (attempt.engine === 'openrouter') {
-    const key = settings.openrouterApiKey.trim();
-    if (!key && !PROXY_URL) throw new Error('OpenRouter API 키가 설정되지 않았습니다.');
-    return recognizeBatchWithOpenRouter(dataUrls, key, mode, attempt.model, PROXY_URL, hints, examples);
+    return recognizeBatchWithOpenRouter(dataUrls, mode, attempt.model, hints, examples);
   }
   throw new Error('자동 인식이 꺼져 있습니다.');
 }

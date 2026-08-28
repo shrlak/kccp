@@ -30,7 +30,9 @@
 // typed. Both are left exactly as they are.
 
 /** Zero-width and other invisible characters that survive a copy from the web. */
-const INVISIBLE = /[​-‍﻿­⁠]/g;
+// 코드 포인트로 적는다. 문자를 그대로 두면 이 줄은 **눈으로 리뷰할 수 없다** — 무엇이
+// 들어 있는지 보이지 않고, 편집기가 하나를 지워도 아무도 알아채지 못한다.
+const INVISIBLE = /[\u200B-\u200D\uFEFF\u00AD\u2060]/g;
 
 /**
  * Particles that are never a word on their own. A score splits syllables
@@ -113,7 +115,7 @@ function repairTransport(line: string): string {
   return line
     .normalize('NFC')
     .replace(INVISIBLE, '')
-    .replace(/[  -   　]/g, ' ')
+    .replace(/[\u00A0\u2000-\u200A\u202F\u205F\u3000]/g, ' ')
     .replace(/[ \t]+/g, ' ')
     .trim();
 }

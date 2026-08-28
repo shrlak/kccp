@@ -7,7 +7,7 @@
 //
 // **키는 여기 없다.** 브라우저는 어느 모델을 부를지만 말하고, 키를 붙이는 것도 무료
 // 카탈로그 밖의 모델을 거절하는 것도 프록시가 한다.
-import { AI_BASE, apiAt } from '../../../../lib/api'
+import { AI_BASE, apiAt, authHeaders } from '../../../../lib/api'
 
 export type Engine = 'gemini' | 'openrouter'
 export type ModelRole = 'champion' | 'challenger' | 'paused'
@@ -18,7 +18,12 @@ export interface Attempt { engine: Engine; model: string }
 export interface SharedSettings {
   attempts: Attempt[]
   excludedTitles: string[]
-  roleOverrides: Record<string, ModelRole>
+  /**
+   * 카탈로그 모델 중 역할이 덮어써진 것만 담긴다. Partial 인 것이 정확하다 —
+   * `Record<string, ModelRole>` 은 아무 문자열에나 역할이 있다고 주장하고, 그러면
+   * 찾지 못한 키가 undefined 가 아니라 ModelRole 로 읽힌다.
+   */
+  roleOverrides: Partial<Record<string, ModelRole>>
 }
 
 export interface UsageModelCard {
@@ -82,4 +87,17 @@ export function getSharedSettings(): Promise<SharedSettings> {
 /** 최고관리자·소유자만 쓸 수 있다 (프록시가 막는다). 미디어 역할 계정은 읽기만. */
 export function saveSharedSettings(settings: SharedSettings): Promise<SharedSettings> {
   return apiAt<SharedSettings>(AI_BASE, 'POST', '/api/slides/ai/settings', settings)
+}
+
+/**
+ * 프록시로 던지고 **Response 를 그대로** 돌려준다. `apiAt` 은 비-2xx 를 던지고 JSON을
+ * 풀어 주지만, 인식은 상태 코드 자체에 다르게 반응한다 — 429는 오늘 한도가 찬 것이라
+ * 다른 모델로 넘어가야 하고, 500은 그 모델이 이 쪽을 못 읽은 것이라 다시 시도한다.
+ */
+export function aiProxyPost(path: string, body: unknown): Promise<Response> {
+  return fetch(`${AI_BASE}${path}`, {
+    method: 'POST',
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
 }

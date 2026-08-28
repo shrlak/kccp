@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { setAdminToken } from '../../../../lib/api';
 import {
   buildGeminiBatchBody,
   buildGeminiBody,
@@ -8,7 +9,7 @@ import {
   recognizeBatchWithGemini,
   recognizeWithGemini,
   splitDataUrl,
-} from '../../src/lib/ai/scoreAi';
+} from './scoreAi';
 
 describe('splitDataUrl', () => {
   it('splits mime type and base64 payload', () => {
@@ -117,7 +118,6 @@ describe('Gemini batch recognition', () => {
 
     const scores = await recognizeBatchWithGemini(
       ['data:image/png;base64,FIRST', 'data:image/png;base64,SECOND'],
-      'key',
       'gemini-3.6-flash',
       'titles',
     );
@@ -192,34 +192,37 @@ describe('recognizeWithGemini', () => {
       { status: 200 },
     );
 
-  it('calls Google directly with the key in the query string when a key is given', async () => {
+  it('언제나 프록시를 지난다 — 브라우저가 Google을 직접 부르는 길은 없다', async () => {
     const fetchSpy = vi.fn().mockResolvedValue(okResponse());
     vi.stubGlobal('fetch', fetchSpy);
 
-    await recognizeWithGemini('data:image/png;base64,ZZZ', 'my-key', 'gemini-3.6-flash', false, 'https://proxy.example');
+    await recognizeWithGemini('data:image/png;base64,ZZZ', 'gemini-3.6-flash', false);
 
     const [url] = fetchSpy.mock.calls[0] as [string, RequestInit];
-    expect(url).toContain('generativelanguage.googleapis.com');
-    expect(url).toContain('key=my-key');
+    // 직접 부르면 영역 검사(areaOf)도 무료 한도 계량(record_ai_usage)도 지나가지 않는다.
+    expect(url).not.toContain('generativelanguage.googleapis.com');
+    expect(url).toContain('/api/slides/ai/gemini/gemini-3.6-flash');
   });
 
-  it('routes through the proxy instead when the key is blank', async () => {
+  it('모델 이름에 슬래시가 있어도 경로가 갈라지지 않는다', async () => {
     const fetchSpy = vi.fn().mockResolvedValue(okResponse());
     vi.stubGlobal('fetch', fetchSpy);
 
-    await recognizeWithGemini('data:image/png;base64,ZZZ', '', 'gemini-3.6-flash', false, 'https://proxy.example/');
+    await recognizeWithGemini('data:image/png;base64,ZZZ', 'a/b', false);
 
     const [url] = fetchSpy.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe('https://proxy.example/gemini/gemini-3.6-flash');
+    expect(url).toContain('/api/slides/ai/gemini/a%2Fb');
   });
 
-  it('calls Google directly (with an empty key) when the key is blank and no proxy is configured', async () => {
+  it('자격을 실어 보낸다 — 슬라이드는 계정으로만 열린다', async () => {
     const fetchSpy = vi.fn().mockResolvedValue(okResponse());
     vi.stubGlobal('fetch', fetchSpy);
+    setAdminToken('jwt-abc');
 
-    await recognizeWithGemini('data:image/png;base64,ZZZ', '', 'gemini-3.6-flash', false);
+    await recognizeWithGemini('data:image/png;base64,ZZZ', 'gemini-3.6-flash', false);
 
-    const [url] = fetchSpy.mock.calls[0] as [string, RequestInit];
-    expect(url).toContain('generativelanguage.googleapis.com');
+    const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect((init.headers as Record<string, string>).Authorization).toBe('Bearer jwt-abc');
+    setAdminToken(null);
   });
 });

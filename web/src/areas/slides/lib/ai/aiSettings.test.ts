@@ -11,7 +11,7 @@ import {
   sanitizeAttemptOrder,
   sanitizeExcludedTitles,
   sanitizeSharedSettings,
-} from '../../src/lib/ai/aiSettings';
+} from './aiSettings';
 import {
   OPENROUTER_NEMOTRON_MODEL,
   RECOGNITION_MODEL_CATALOG as WORKER_CATALOG,
@@ -19,7 +19,10 @@ import {
   migrateEngineName as workerMigrateEngineName,
   resolveOpenRouterRoute,
   sanitizeSharedSettings as workerSanitize,
-} from '../../worker/src/config.js';
+} from '../../../../../../supabase/functions/ai-proxy/catalog'
+// 서버가 실제로 강제하는 카탈로그. ppt에서는 이 짝이 Worker의 config.js 였고, 지금은
+// ai-proxy 다 — 둘이 어긋나면 화면이 프록시가 거절할 모델을 사람에게 권하게 된다.
+// (partition.ts ↔ auth.ts, api.ts의 AdminRole ↔ auth.ts 와 같은 규칙이다.)
 
 describe('recognition model catalog', () => {
   it('has a unique, stable concurrent model catalog', () => {

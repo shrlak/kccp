@@ -5,7 +5,7 @@ import {
   coerceParsedScoreBatch,
   parseScoreText,
   splitNumberedVerses,
-} from '../../src/lib/ai/scoreParser';
+} from './scoreParser';
 
 describe('page classification metadata', () => {
   it('normalizes a non-score page and its sermon fields', () => {

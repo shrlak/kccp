@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { planScoreBatch } from '../../src/lib/ai/scoreBatchPlan';
-import type { LibraryEntry } from '../../src/lib/utils/types';
+import { planScoreBatch } from './scoreBatchPlan';
+import type { LibraryEntry } from '../utils/types';
 
 const library: LibraryEntry[] = [
   {

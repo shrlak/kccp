@@ -1,4 +1,4 @@
-import { findReusableEntry } from '../storage/library';
+import { findReusableEntry } from '../lyrics/songLibrary';
 import type { LibraryEntry } from '../utils/types';
 import type { ParsedScore } from './scoreParser';
 import { TITLE_REVIEW_THRESHOLD } from './weightedConsensus';

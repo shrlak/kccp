@@ -3,7 +3,7 @@ import {
   orderForSections,
   parsePartHeading,
   structureScrapedLyrics,
-} from '../../src/lib/lyrics/lyricsStructure';
+} from './lyricsStructure';
 
 // Invented placeholder text: these tests are about part structure, not about
 // any particular song's words.

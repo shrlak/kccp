@@ -166,13 +166,19 @@ export const DEFAULT_SHARED_SETTINGS: SharedRecognitionSettings = {
   roleOverrides: {},
 };
 
+/**
+ * 인식 설정. **키 칸은 없다.**
+ *
+ * ppt에는 geminiApiKey · openrouterApiKey 가 있었다. 정적 사이트라 프록시가 없는
+ * 배포도 가능했고, 그때는 사람이 자기 키를 붙여 넣어 썼다. 합쳐진 앱에서 그 길은
+ * **막아야 하는 길**이다: 브라우저가 상류를 직접 부르면 영역 검사(`areaOf`)도
+ * 무료 한도 계량(`record_ai_usage`)도 지나가지 않는다. 키는 함수 시크릿에만 있다.
+ */
 export interface AiSettings extends SharedRecognitionSettings {
-  geminiApiKey: string;
   /** Model for the quick title-identification pass (speed matters there). */
   geminiModel: string;
   /** Cross-check recognized lyrics against the web via Gemini's Google Search grounding. */
   geminiUseSearch: boolean;
-  openrouterApiKey: string;
 }
 
 export const DEFAULT_GEMINI_MODEL = 'gemini-3.6-flash';
@@ -181,10 +187,8 @@ export const DEFAULT_AI_SETTINGS: AiSettings = {
   attempts: [...DEFAULT_ATTEMPT_ORDER],
   excludedTitles: [...DEFAULT_EXCLUDED_TITLES],
   roleOverrides: {},
-  geminiApiKey: '',
   geminiModel: DEFAULT_GEMINI_MODEL,
   geminiUseSearch: true,
-  openrouterApiKey: '',
 };
 
 export function attemptKey(attempt: RecognitionAttempt): string {
@@ -290,117 +294,65 @@ export function sanitizeSharedSettings(raw: unknown): SharedRecognitionSettings 
   };
 }
 
-const SHARED_SETTINGS_KEY = 'kccp-shared-recognition-settings';
-/** Pre-catalog storage key that held plain engine names. */
-const LEGACY_ORDER_KEY = 'kccp-recognition-order';
+/**
+ * ── 전송 ─────────────────────────────────────────────────────────────────────
+ *
+ * ppt에서는 이 아래가 localStorage + Worker 였다. 두 가지가 함께 사라진다:
+ *
+ * 1. **"이 브라우저의 사본".** 로그인이 없던 앱이라 설정을 기기마다 캐시해 두고
+ *    서버와 병합했다. 계정이 생기면 사본은 하나다 — 어느 기기에서 열어도 같은
+ *    모델 풀을 본다.
+ * 2. **비밀번호 인자.** `pushSharedSettings(settings, password)` 의 그 password 는
+ *    로그인이 없는 정적 사이트의 무른 관문이었다(문자열 하나가 코드에 박혀 있었다).
+ *    지금은 서버가 최고관리자·소유자인지 확인하므로 인자 자체가 없어진다 — 남겨
+ *    두면 아무것도 지키지 않으면서 지키는 것처럼 보인다.
+ */
+import { getSharedSettings, saveSharedSettings } from './proxy';
 
-/** Last-known shared settings from this browser (offline cache). */
-export function loadLocalSharedSettings(): SharedRecognitionSettings {
-  try {
-    const raw = localStorage.getItem(SHARED_SETTINGS_KEY);
-    if (raw) return sanitizeSharedSettings(JSON.parse(raw));
-    const legacy = localStorage.getItem(LEGACY_ORDER_KEY);
-    if (legacy) return sanitizeSharedSettings({ attempts: JSON.parse(legacy) });
-    return { ...DEFAULT_SHARED_SETTINGS, attempts: [...DEFAULT_ATTEMPT_ORDER] };
-  } catch {
-    return { ...DEFAULT_SHARED_SETTINGS, attempts: [...DEFAULT_ATTEMPT_ORDER] };
-  }
-}
-
-export function saveLocalSharedSettings(settings: SharedRecognitionSettings): void {
-  try {
-    localStorage.setItem(SHARED_SETTINGS_KEY, JSON.stringify(sanitizeSharedSettings(settings)));
-  } catch {
-    // Private browsing without storage — the settings just won't persist locally.
-  }
-}
-
-/** Strip a trailing slash so callers can pass either form of a base URL. */
-function trimTrailingSlash(url: string): string {
-  return url.endsWith('/') ? url.slice(0, -1) : url;
-}
-
-function proxyUrl(): string | undefined {
-  return import.meta.env.VITE_RECOGNITION_PROXY_URL?.trim() || undefined;
-}
-
+/** 프록시는 언제나 있다 — 슬라이드 화면에 들어왔다는 것이 곧 그 자격이다. */
 export function hasSharedSettings(): boolean {
-  return !!proxyUrl();
+  return true;
 }
 
 /**
- * Fetch the shared settings from the recognition proxy. Returns null when
- * there is no proxy or the request fails — callers fall back to the local
- * cache. A successful fetch refreshes the cache so the shared settings
- * survive offline reloads.
+ * 프록시에서 공유 설정을 읽는다. 실패하면 null — 부르는 쪽이 기본값으로 내려간다.
+ * 인식이 설정 하나 때문에 멈추면 안 되기 때문이고, 기본값은 카탈로그 전체 순서라
+ * 안전한 쪽이다.
  */
-export async function fetchSharedSettings(signal?: AbortSignal): Promise<SharedRecognitionSettings | null> {
-  const base = proxyUrl();
-  if (!base) return null;
+export async function fetchSharedSettings(): Promise<SharedRecognitionSettings | null> {
   try {
-    const response = await fetch(`${trimTrailingSlash(base)}/settings`, {
-      method: 'GET',
-      headers: { Accept: 'application/json' },
-      signal,
-    });
-    if (!response.ok) return null;
-    const settings = sanitizeSharedSettings((await response.json()) as unknown);
-    saveLocalSharedSettings(settings);
-    return settings;
+    return sanitizeSharedSettings(await getSharedSettings());
   } catch {
     return null;
   }
 }
 
 /**
- * Publish new shared settings so every device picks them up. The password
- * is the 관리자 설정 password — the proxy checks it server-side (same soft
- * gate as the admin panel itself). Throws with a readable message on
- * failure; on success the local cache and memo refresh immediately.
+ * 새 공유 설정을 올린다. 모든 기기가 다음 인식부터 이것을 쓴다.
+ *
+ * 서버가 카탈로그 밖의 모델을 **저장할 때도 씻으므로**, 오래된 화면이 유료 모델을
+ * 설정에 심을 수 없다. 권한도 서버가 본다 (최고관리자·소유자).
  */
-export async function pushSharedSettings(
-  settings: SharedRecognitionSettings,
-  password: string,
-): Promise<void> {
-  const base = proxyUrl();
-  if (!base) throw new Error('공유 프록시가 연결되지 않아 이 브라우저에만 저장됩니다.');
-  const clean = sanitizeSharedSettings(settings);
-  const response = await fetch(`${trimTrailingSlash(base)}/settings`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ password, ...clean }),
-  });
-  if (!response.ok) {
-    let detail = `HTTP ${response.status}`;
-    try {
-      const payload = (await response.json()) as { error?: string };
-      if (payload.error) detail = payload.error;
-    } catch {
-      // keep the status code
-    }
-    throw new Error(`공유 설정 저장 실패: ${detail}`);
-  }
-  saveLocalSharedSettings(clean);
+export async function pushSharedSettings(settings: SharedRecognitionSettings): Promise<void> {
+  await saveSharedSettings(sanitizeSharedSettings(settings));
   invalidateSharedSettings();
 }
 
-// The shared settings are fetched at most once per page load (recognition
-// runs close together); an admin save invalidates the memo so the same
-// session sees its own change immediately.
+// 공유 설정은 한 페이지 로드에 한 번만 읽는다 (인식은 몰아서 돈다). 관리자가 저장하면
+// 메모를 버려서 같은 세션이 자기 변경을 곧바로 본다.
 let sharedSettingsMemo: Promise<SharedRecognitionSettings | null> | null = null;
 
 export function invalidateSharedSettings(): void {
   sharedSettingsMemo = null;
 }
 
-/** Recognition settings honoring the shared (or locally cached) settings. */
+/** 공유 설정을 반영한 인식 설정. 못 읽으면 기본값. */
 export async function getSyncedAiSettings(): Promise<AiSettings> {
   if (!sharedSettingsMemo) sharedSettingsMemo = fetchSharedSettings();
-  const shared = (await sharedSettingsMemo) ?? loadLocalSharedSettings();
-  return { ...DEFAULT_AI_SETTINGS, ...shared };
+  return { ...DEFAULT_AI_SETTINGS, ...((await sharedSettingsMemo) ?? {}) };
 }
 
-/** Synchronous settings from the local cache (tests, non-async callers). */
+/** 기다리지 않는 짝 — 기본값 그대로 (테스트와 동기 호출부). */
 export function getAiSettings(): AiSettings {
-  return { ...DEFAULT_AI_SETTINGS, ...loadLocalSharedSettings() };
+  return { ...DEFAULT_AI_SETTINGS };
 }

@@ -5,7 +5,7 @@ import {
   progressPercent,
   recognitionProgress,
   type RecognitionPhase,
-} from '../../src/lib/ai/recognitionProgress';
+} from './recognitionProgress';
 
 describe('recognition phase spans', () => {
   it('covers 0% to ~100% across the pipeline in stage order', () => {

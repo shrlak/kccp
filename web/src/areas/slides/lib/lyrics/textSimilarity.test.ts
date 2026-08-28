@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { sameLyrics } from '../../src/lib/lyrics/textSimilarity';
-import type { Section } from '../../src/lib/utils/types';
+import { sameLyrics } from './textSimilarity';
+import type { Section } from '../utils/types';
 
 const section = (label: string, lines: string[]): Section => ({ label, lines });
 

@@ -33,6 +33,23 @@ export function setAdminPartition(partition: Partition | null) {
   } catch { /* non-fatal */ }
 }
 
+/**
+ * 이 요청이 누구인지 말하는 헤더들 — 구글 토큰이 있으면 그것, 없으면 비밀번호, 그리고
+ * 토큰일 때만 고른 부(部).
+ *
+ * 내보내는 이유는 JSON 왕복이 아닌 호출이 하나 있기 때문이다: 슬라이드 인식은 상류의
+ * 상태 코드를 그대로 읽어야 해서(429는 한도, 500은 모델 오류) 날 Response 가 필요하다.
+ * 그 하나 때문에 자격 규칙이 두 벌이 되면 뒤처지는 쪽이 생기고, 뒤처진 쪽은 대개
+ * **덜 실어 보내는** 쪽이라 알 수 없는 401로 나타난다.
+ */
+export function authHeaders(): Record<string, string> {
+  const headers: Record<string, string> = { 'X-Device-Id': getDeviceId() }
+  if (adminToken) headers['Authorization'] = `Bearer ${adminToken}`
+  else if (adminPassword) headers['X-Admin-Password'] = adminPassword
+  if (adminToken && adminPartition) headers['X-Partition'] = adminPartition
+  return headers
+}
+
 export async function api<T = unknown>(
   method: Method,
   path: string,
@@ -58,10 +75,7 @@ export async function apiAt<T = unknown>(
 ): Promise<T> {
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), timeoutMs)
-  const headers: Record<string, string> = { 'X-Device-Id': getDeviceId() }
-  if (adminToken) headers['Authorization'] = `Bearer ${adminToken}`
-  else if (adminPassword) headers['X-Admin-Password'] = adminPassword
-  if (adminToken && adminPartition) headers['X-Partition'] = adminPartition
+  const headers = authHeaders()
   if (extraHeaders) Object.assign(headers, extraHeaders)
   if (body) headers['Content-Type'] = 'application/json'
   try {

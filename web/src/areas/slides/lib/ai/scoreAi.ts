@@ -1,3 +1,4 @@
+import { aiProxyPost } from './proxy';
 // Gemini Flash vision engine for turning a scanned 악보 image into a structured
 // draft song. Called directly from the browser with the user's own free Google
 // AI Studio key (no backend, no SDK — a plain fetch to the REST endpoint, which
@@ -15,12 +16,6 @@ import {
 
 export type { BatchRecognitionMode };
 
-const ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models';
-
-/** Strip a trailing slash so callers can pass either form of a base URL. */
-function trimTrailingSlash(url: string): string {
-  return url.endsWith('/') ? url.slice(0, -1) : url;
-}
 
 /** JSON Schema handed to Gemini so it returns strictly-shaped output. */
 const RESPONSE_SCHEMA = {
@@ -219,30 +214,23 @@ export function extractGeminiText(response: unknown): string {
   return parts.map((p) => p?.text ?? '').join('');
 }
 
+/** 이 모델로 한 쪽(또는 여러 쪽)을 읽어 달라고 프록시에 던진다. */
+function postToProxy(model: string, body: unknown): Promise<Response> {
+  return aiProxyPost(`/api/slides/ai/gemini/${encodeURIComponent(model)}`, body);
+}
+
 /**
  * Recognize a single score image with Gemini. Throws with a readable message on failure.
  *
- * When `apiKey` is blank and `proxyUrl` is supplied, the request goes through a
- * shared server-side proxy (see worker/) that holds its own Gemini key instead
- * of calling Google directly — this lets recognition work for people who
- * haven't set up their own free key.
+ * 언제나 ai-proxy 를 지난다. 브라우저가 Google을 직접 부르는 길은 없앴다 — 그 길로는
+ * 영역 검사도 무료 한도 계량도 지나가지 않기 때문이다. 키는 함수 시크릿에만 있다.
  */
 export async function recognizeWithGemini(
   dataUrl: string,
-  apiKey: string,
   model: string,
   useSearch = false,
-  proxyUrl?: string,
 ): Promise<ParsedScore> {
-  const useProxy = !apiKey.trim() && !!proxyUrl;
-  const url = useProxy
-    ? `${trimTrailingSlash(proxyUrl!)}/gemini/${encodeURIComponent(model)}`
-    : `${ENDPOINT}/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(buildGeminiBody(dataUrl, useSearch)),
-  });
+  const res = await postToProxy(model, buildGeminiBody(dataUrl, useSearch));
 
   if (!res.ok) {
     let detail = `HTTP ${res.status}`;
@@ -267,24 +255,14 @@ export async function recognizeWithGemini(
 /** Recognize all supplied score images in one Gemini request. */
 export async function recognizeBatchWithGemini(
   dataUrls: string[],
-  apiKey: string,
   model: string,
   mode: BatchRecognitionMode,
   useSearch = false,
-  proxyUrl?: string,
   hints?: (string | undefined)[],
   examples: PromptExample[] = [],
 ): Promise<ParsedScore[]> {
   if (dataUrls.length === 0) return [];
-  const useProxy = !apiKey.trim() && !!proxyUrl;
-  const url = useProxy
-    ? `${trimTrailingSlash(proxyUrl!)}/gemini/${encodeURIComponent(model)}`
-    : `${ENDPOINT}/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(buildGeminiBatchBody(dataUrls, mode, useSearch, hints, examples)),
-  });
+  const res = await postToProxy(model, buildGeminiBatchBody(dataUrls, mode, useSearch, hints, examples));
 
   if (!res.ok) {
     let detail = `HTTP ${res.status}`;

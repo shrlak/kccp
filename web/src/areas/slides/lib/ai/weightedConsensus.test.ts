@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { buildWeightedConsensus } from '../../src/lib/ai/weightedConsensus';
-import { emptyReliability, type ModelReliability } from '../../src/lib/ai/modelReliability';
-import type { RecognitionObservation } from '../../src/lib/ai/recognitionObservation';
-import type { ParsedScore } from '../../src/lib/ai/scoreParser';
+import { buildWeightedConsensus } from './weightedConsensus';
+import { emptyReliability, type ModelReliability } from './modelReliability';
+import type { RecognitionObservation } from './recognitionObservation';
+import type { ParsedScore } from './scoreParser';
 
 const NOW = new Date('2026-08-14T00:00:00.000Z');
 

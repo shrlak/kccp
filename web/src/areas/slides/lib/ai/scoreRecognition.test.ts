@@ -5,11 +5,11 @@ import {
   recognizeScoreBatch,
   recognizeScoreBatchEnsemble,
   recognizeScoreRaced,
-} from '../../src/lib/ai/scoreRecognition';
-import { DEFAULT_AI_SETTINGS, RECOGNITION_MODEL_CATALOG } from '../../src/lib/ai/aiSettings';
-import { RecognitionError } from '../../src/lib/ai/recognitionError';
-import type { Song } from '../../src/lib/utils/types';
-import type { ParsedScore } from '../../src/lib/ai/scoreParser';
+} from './scoreRecognition';
+import { DEFAULT_AI_SETTINGS, RECOGNITION_MODEL_CATALOG } from './aiSettings';
+import { RecognitionError } from './recognitionError';
+import type { Song } from '../utils/types';
+import type { ParsedScore } from './scoreParser';
 
 const GEMINI_MODEL_COUNT = RECOGNITION_MODEL_CATALOG.filter((entry) => entry.engine === 'gemini').length;
 const OPENROUTER_MODEL_COUNT = RECOGNITION_MODEL_CATALOG.filter(
@@ -18,17 +18,17 @@ const OPENROUTER_MODEL_COUNT = RECOGNITION_MODEL_CATALOG.filter(
 /** Lowest-priority model in the pool — the one every other model outranks. */
 const LAST_MODEL = RECOGNITION_MODEL_CATALOG[RECOGNITION_MODEL_CATALOG.length - 1].model;
 
-vi.mock('../../src/lib/ai/scoreAi', () => ({
+vi.mock('./scoreAi', () => ({
   recognizeWithGemini: vi.fn(),
   recognizeBatchWithGemini: vi.fn(),
 }));
-vi.mock('../../src/lib/ai/scoreNvidia', () => ({
+vi.mock('./scoreNvidia', () => ({
   recognizeWithOpenRouter: vi.fn(),
   recognizeBatchWithOpenRouter: vi.fn(),
 }));
 
-import { recognizeBatchWithGemini, recognizeWithGemini } from '../../src/lib/ai/scoreAi';
-import { recognizeBatchWithOpenRouter, recognizeWithOpenRouter } from '../../src/lib/ai/scoreNvidia';
+import { recognizeBatchWithGemini, recognizeWithGemini } from './scoreAi';
+import { recognizeBatchWithOpenRouter, recognizeWithOpenRouter } from './scoreNvidia';
 
 const stub: Song = {
   id: '1',
@@ -69,7 +69,7 @@ describe('concurrent single-page recognition', () => {
   });
 
   it('launches the complete model pool together and returns the first usable result', async () => {
-    vi.mocked(recognizeWithOpenRouter).mockImplementation(async (_url, _key, model) => {
+    vi.mocked(recognizeWithOpenRouter).mockImplementation(async (_url, model) => {
       if (model === 'nvidia/nemotron-nano-12b-v2-vl') return result;
       throw new Error('down');
     });
@@ -82,7 +82,7 @@ describe('concurrent single-page recognition', () => {
   });
 
   it('lets a later-listed provider win by finishing first', async () => {
-    vi.mocked(recognizeWithOpenRouter).mockImplementation(async (_url, _key, model) => {
+    vi.mocked(recognizeWithOpenRouter).mockImplementation(async (_url, model) => {
       if (model === LAST_MODEL) return result;
       throw new Error('down');
     });
@@ -94,7 +94,7 @@ describe('concurrent single-page recognition', () => {
 
   it('ignores empty answers while the other concurrent models continue', async () => {
     vi.mocked(recognizeWithGemini).mockResolvedValue(emptyScore);
-    vi.mocked(recognizeWithOpenRouter).mockImplementation(async (_url, _key, model) => {
+    vi.mocked(recognizeWithOpenRouter).mockImplementation(async (_url, model) => {
       if (model === LAST_MODEL) return result;
       throw new Error('down');
     });
@@ -133,7 +133,7 @@ describe('concurrent single-page recognition', () => {
   });
 
   it('keeps the rescue API on the same all-model race', async () => {
-    vi.mocked(recognizeWithOpenRouter).mockImplementation(async (_url, _key, model) => {
+    vi.mocked(recognizeWithOpenRouter).mockImplementation(async (_url, model) => {
       if (model === LAST_MODEL) return result;
       throw new Error('down');
     });
@@ -159,7 +159,7 @@ describe('concurrent batch recognition', () => {
   });
 
   it('launches every model together for the title pass', async () => {
-    vi.mocked(recognizeBatchWithGemini).mockImplementation(async (_urls, _key, model) => {
+    vi.mocked(recognizeBatchWithGemini).mockImplementation(async (_urls, model) => {
       if (model === 'gemini-3.6-flash') return [first, second];
       throw new Error('down');
     });
@@ -192,10 +192,10 @@ describe('concurrent batch recognition', () => {
     let resolveOpenRouter!: (scores: ParsedScore[]) => void;
     const gemini = new Promise<ParsedScore[]>((resolve) => { resolveGemini = resolve; });
     const openRouter = new Promise<ParsedScore[]>((resolve) => { resolveOpenRouter = resolve; });
-    vi.mocked(recognizeBatchWithGemini).mockImplementation((_urls, _key, model) =>
+    vi.mocked(recognizeBatchWithGemini).mockImplementation((_urls, model) =>
       model === 'gemini-3.6-flash' ? gemini : Promise.reject(new Error('down')),
     );
-    vi.mocked(recognizeBatchWithOpenRouter).mockImplementation((_urls, _key, _mode, model) =>
+    vi.mocked(recognizeBatchWithOpenRouter).mockImplementation((_urls, _mode, model) =>
       model === 'nvidia/nemotron-nano-12b-v2-vl' ? openRouter : Promise.reject(new Error('down')),
     );
 
@@ -257,11 +257,11 @@ describe('concurrent batch recognition', () => {
       order: ['I', 'V1', 'C'],
       sections: [{ label: 'V1', lines: ['가사 한 줄'] }],
     };
-    vi.mocked(recognizeBatchWithGemini).mockImplementation(async (_urls, _key, model) => {
+    vi.mocked(recognizeBatchWithGemini).mockImplementation(async (_urls, model) => {
       if (model === 'gemini-3.6-flash') return [geminiAnswer];
       throw new Error('down');
     });
-    vi.mocked(recognizeBatchWithOpenRouter).mockImplementation(async (_urls, _key, _mode, model) => {
+    vi.mocked(recognizeBatchWithOpenRouter).mockImplementation(async (_urls, _mode, model) => {
       if (model === 'nvidia/nemotron-nano-12b-v2-vl') return [openRouterAnswer];
       throw new Error('down');
     });
@@ -301,7 +301,7 @@ describe('concurrent batch recognition', () => {
         { label: 'C', lines: ['주님만이 내 아픔 아시며'] },
       ],
     };
-    vi.mocked(recognizeBatchWithGemini).mockImplementation(async (_urls, _key, model) => {
+    vi.mocked(recognizeBatchWithGemini).mockImplementation(async (_urls, model) => {
       if (model === 'gemini-3.6-flash') return [merged];
       throw new Error('down');
     });
@@ -333,7 +333,7 @@ describe('concurrent batch recognition', () => {
         { label: 'C', lines: ['후렴 가사'] },
       ],
     };
-    vi.mocked(recognizeBatchWithGemini).mockImplementation(async (_urls, _key, model) => {
+    vi.mocked(recognizeBatchWithGemini).mockImplementation(async (_urls, model) => {
       if (model === 'gemini-3.6-flash') return [merged];
       throw new Error('down');
     });
@@ -357,7 +357,7 @@ describe('concurrent batch recognition', () => {
         { label: 'V2', lines: ['이 페이지와 상관없는 두 번째 절'] },
       ],
     };
-    vi.mocked(recognizeBatchWithGemini).mockImplementation(async (_urls, _key, model) => {
+    vi.mocked(recognizeBatchWithGemini).mockImplementation(async (_urls, model) => {
       if (model === 'gemini-3.6-flash') return [winner];
       throw new Error('down');
     });
@@ -382,11 +382,11 @@ describe('concurrent batch recognition', () => {
       order: ['I'],
       sections: [{ label: 'V1', lines: ['잘못 읽은 가사'] }],
     };
-    vi.mocked(recognizeBatchWithGemini).mockImplementation(async (_urls, _key, model) => {
+    vi.mocked(recognizeBatchWithGemini).mockImplementation(async (_urls, model) => {
       if (model === 'gemini-3.6-flash') return [nonScore];
       throw new Error('down');
     });
-    vi.mocked(recognizeBatchWithOpenRouter).mockImplementation(async (_urls, _key, _mode, model) => {
+    vi.mocked(recognizeBatchWithOpenRouter).mockImplementation(async (_urls, _mode, model) => {
       if (model === 'nvidia/nemotron-nano-12b-v2-vl') return [disagreeing];
       throw new Error('down');
     });
@@ -400,7 +400,7 @@ describe('concurrent batch recognition', () => {
   });
 
   it('forwards title hints to every concurrent Gemini model', async () => {
-    vi.mocked(recognizeBatchWithGemini).mockImplementation(async (_urls, _key, model) => {
+    vi.mocked(recognizeBatchWithGemini).mockImplementation(async (_urls, model) => {
       if (model === 'gemini-3.5-flash') return [first, second];
       throw new Error('down');
     });
@@ -410,7 +410,7 @@ describe('concurrent batch recognition', () => {
 
     const calls = vi.mocked(recognizeBatchWithGemini).mock.calls;
     expect(calls).toHaveLength(GEMINI_MODEL_COUNT);
-    expect(calls.every((call) => call[6] === hints)).toBe(true);
+    expect(calls.every((call) => call[4] === hints)).toBe(true);
   });
 
   it('rejects when all concurrent models fail or return empty', async () => {
@@ -419,7 +419,7 @@ describe('concurrent batch recognition', () => {
   });
 
   it('uses the same complete pool for the full-lyrics ensemble API', async () => {
-    vi.mocked(recognizeBatchWithOpenRouter).mockImplementation(async (_urls, _key, _mode, model) => {
+    vi.mocked(recognizeBatchWithOpenRouter).mockImplementation(async (_urls, _mode, model) => {
       if (model === 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free') return [first, second];
       throw new Error('down');
     });
@@ -486,7 +486,7 @@ describe('applyScoreToSong', () => {
 describe('line-level consensus across the model pool', () => {
   /** Winner (top-priority Gemini) plus two supporting readings of one page. */
   const pool = (winner: ParsedScore, second: ParsedScore, third: ParsedScore) => {
-    vi.mocked(recognizeBatchWithGemini).mockImplementation(async (_urls, _key, model) =>
+    vi.mocked(recognizeBatchWithGemini).mockImplementation(async (_urls, model) =>
       model === 'gemini-3.6-flash' ? [winner] : [second],
     );
     vi.mocked(recognizeBatchWithOpenRouter).mockResolvedValue([third]);
@@ -538,7 +538,7 @@ describe('line-level consensus across the model pool', () => {
   });
 
   it('is inert for a pool of two, where one vote can never beat the winner', async () => {
-    vi.mocked(recognizeBatchWithGemini).mockImplementation(async (_urls, _key, model) =>
+    vi.mocked(recognizeBatchWithGemini).mockImplementation(async (_urls, model) =>
       model === 'gemini-3.6-flash' ? [one(['능력이'])] : [one(['실력이'])],
     );
     vi.mocked(recognizeBatchWithOpenRouter).mockRejectedValue(new Error('down'));
@@ -549,7 +549,7 @@ describe('line-level consensus across the model pool', () => {
 
 describe('lines the winning model stopped short of', () => {
   const winnerAnd = (winner: ParsedScore, other: ParsedScore) => {
-    vi.mocked(recognizeBatchWithGemini).mockImplementation(async (_urls, _key, model) =>
+    vi.mocked(recognizeBatchWithGemini).mockImplementation(async (_urls, model) =>
       model === 'gemini-3.6-flash' ? [winner] : [other],
     );
     vi.mocked(recognizeBatchWithOpenRouter).mockRejectedValue(new Error('down'));

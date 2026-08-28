@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseUsageSnapshot } from '../../src/lib/ai/usageMonitor';
+import { parseUsageSnapshot } from './usageMonitor';
 
 describe('parseUsageSnapshot', () => {
   it('normalizes a model-level proxy usage response', () => {

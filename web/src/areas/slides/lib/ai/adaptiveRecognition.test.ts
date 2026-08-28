@@ -3,21 +3,21 @@ import {
   planAdaptiveAttempts,
   recognizeAdaptiveBatch,
   type BatchProvider,
-} from '../../src/lib/ai/adaptiveRecognition';
+} from './adaptiveRecognition';
 import {
   DEFAULT_AI_SETTINGS,
   RECOGNITION_MODEL_CATALOG,
   type AiSettings,
   type RecognitionAttempt,
-} from '../../src/lib/ai/aiSettings';
-import { emptyReliability, modelKeyFor, rankModels, type ModelReliability } from '../../src/lib/ai/modelReliability';
-import { RecognitionError } from '../../src/lib/ai/recognitionError';
-import type { BatchAttemptResult } from '../../src/lib/ai/scoreRecognition';
-import type { ParsedScore } from '../../src/lib/ai/scoreParser';
+} from './aiSettings';
+import { emptyReliability, modelKeyFor, rankModels, type ModelReliability } from './modelReliability';
+import { RecognitionError } from './recognitionError';
+import type { BatchAttemptResult } from './scoreRecognition';
+import type { ParsedScore } from './scoreParser';
 
 const NOW = new Date('2026-08-14T00:00:00.000Z');
 
-const settings: AiSettings = { ...DEFAULT_AI_SETTINGS, geminiApiKey: 'test-key', openrouterApiKey: 'test-key' };
+const settings: AiSettings = { ...DEFAULT_AI_SETTINGS };
 
 const CHAMPIONS = RECOGNITION_MODEL_CATALOG.filter((entry) => entry.role === 'champion');
 const CHALLENGERS = RECOGNITION_MODEL_CATALOG.filter((entry) => entry.role === 'challenger');

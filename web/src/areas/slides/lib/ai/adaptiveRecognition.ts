@@ -201,7 +201,7 @@ export async function recognizeAdaptiveBatch(
   if (plan.champions.length === 0) throw new Error('사용할 수 있는 인식 모델이 없습니다.');
   await runRound(plan.champions, allPages);
 
-  let consensus = observations.map((page) => buildWeightedConsensus(page, reliabilities));
+  const consensus = observations.map((page) => buildWeightedConsensus(page, reliabilities));
 
   // Escalate one challenger at a time: each is a real free-quota request, and
   // a single extra reading usually settles the page.

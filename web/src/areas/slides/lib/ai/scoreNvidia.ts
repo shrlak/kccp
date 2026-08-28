@@ -1,3 +1,4 @@
+import { aiProxyPost } from './proxy';
 // OpenRouter vision engine for score recognition. This legacy filename is
 // retained to avoid a noisy module rename, but every catalog model handled
 // here is an OpenRouter :free endpoint (including NVIDIA's Nemotron). Images
@@ -12,18 +13,12 @@ import {
   type ParsedScore,
 } from './scoreParser';
 
-const ENDPOINT = 'https://openrouter.ai/api/v1/chat/completions';
 
 /**
  * Default catalog model. Nemotron Nano 12B v2 VL is NVIDIA's document/OCR
  * vision model and is served here through OpenRouter's free endpoint.
  */
 export const DEFAULT_NVIDIA_MODEL = 'nvidia/nemotron-nano-12b-v2-vl';
-
-/** Strip a trailing slash so callers can pass either form of a base URL. */
-function trimTrailingSlash(url: string): string {
-  return url.endsWith('/') ? url.slice(0, -1) : url;
-}
 
 const BASE_PROMPT = basePrompt(
   '반드시 유효한 JSON 객체 하나만 출력하고, 다른 설명이나 마크다운(```)은 넣지 마세요.',
@@ -131,23 +126,13 @@ export function extractOpenRouterText(response: unknown): string {
   return '';
 }
 
-async function callOpenRouter(body: unknown, apiKey: string, proxyUrl?: string): Promise<string> {
-  const useProxy = !apiKey.trim() && !!proxyUrl;
-  const url = useProxy ? `${trimTrailingSlash(proxyUrl!)}/openrouter` : ENDPOINT;
-  const requestBody =
-    !useProxy &&
-    body &&
-    typeof body === 'object' &&
-    (body as { model?: unknown }).model === DEFAULT_NVIDIA_MODEL
-      ? { ...(body as Record<string, unknown>), model: `${DEFAULT_NVIDIA_MODEL}:free` }
-      : body;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: useProxy
-      ? { 'Content-Type': 'application/json' }
-      : { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify(requestBody),
-  });
+/**
+ * 언제나 ai-proxy 를 지난다. `:free` 로 고정하는 일도, 카탈로그 밖 모델을 거절하는 일도
+ * 서버가 한다 — 여기서 모델 이름을 손보던 코드(DEFAULT_NVIDIA_MODEL 에 :free 붙이기)가
+ * 사라진 이유다. 브라우저가 OpenRouter를 직접 부르는 길은 없앴다.
+ */
+async function callOpenRouter(body: unknown): Promise<string> {
+  const res = await aiProxyPost('/api/slides/ai/openrouter', body);
 
   if (!res.ok) {
     let detail = `HTTP ${res.status}`;
@@ -173,11 +158,9 @@ async function callOpenRouter(body: unknown, apiKey: string, proxyUrl?: string):
  */
 export async function recognizeWithOpenRouter(
   dataUrl: string,
-  apiKey: string,
   model: string = DEFAULT_NVIDIA_MODEL,
-  proxyUrl?: string,
 ): Promise<ParsedScore> {
-  const text = await callOpenRouter(buildOpenRouterBody(dataUrl, model), apiKey, proxyUrl);
+  const text = await callOpenRouter(buildOpenRouterBody(dataUrl, model));
   const payload = parseModelJson(
     text,
     'OpenRouter 응답이 비어 있습니다.',
@@ -189,19 +172,15 @@ export async function recognizeWithOpenRouter(
 /** Recognize every supplied score image in one OpenRouter request. */
 export async function recognizeBatchWithOpenRouter(
   dataUrls: string[],
-  apiKey: string,
   mode: BatchRecognitionMode,
   model: string = DEFAULT_NVIDIA_MODEL,
-  proxyUrl?: string,
   hints?: (string | undefined)[],
   examples: PromptExample[] = [],
 ): Promise<ParsedScore[]> {
   if (dataUrls.length === 0) return [];
   const text = await callOpenRouter(
     buildOpenRouterBatchBody(dataUrls, mode, model, hints, examples),
-    apiKey,
-    proxyUrl,
-  );
+      );
   const payload = parseModelJson(
     text,
     'OpenRouter 일괄 응답이 비어 있습니다.',
