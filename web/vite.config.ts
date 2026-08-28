@@ -34,6 +34,23 @@ export default defineConfig({
         main: resolve(__dirname, 'index.html'),
         share: resolve(__dirname, 'share.html'),
       },
+      output: {
+        // 슬라이드 청크에 **이름을 준다.** 청크를 다시 가르지 않는다 — lazy import가
+        // 이미 만들어 놓은 경계에 안정된 이름만 붙이는 일이다.
+        //
+        // 이름이 필요한 이유는 선캐시에서 빼야 하기 때문이다(globIgnores). 기본 이름은
+        // 그 경계를 연 컴포넌트에서 온다(SlidesShell-xxxx) — 컴포넌트 이름을 바꾸는
+        // 순간 그 규칙이 조용히 아무것도 막지 않게 되고, 그 다음 배포부터 모든 사람이
+        // 700 KiB를 받는다. 여기서 이름을 정하면 그 일이 일어나지 않는다.
+        //
+        // manualChunks로 몰지 않는 이유: 그렇게 하면 롤다운이 공유 모듈(supabase 클라이언트,
+        // 로그인 스토어)까지 이 청크에 넣어 버리고, 랜딩이 슬라이드 청크를 정적으로
+        // import 하게 된다 — 막으려던 것을 정확히 반대로 하는 셈이다.
+        chunkFileNames(chunk: { moduleIds?: string[]; name: string }) {
+          const slides = chunk.moduleIds?.some((id) => id.includes('/src/areas/slides/'))
+          return slides ? 'assets/slides-[hash].js' : 'assets/[name]-[hash].js'
+        },
+      },
     },
   },
   plugins: [
@@ -76,11 +93,15 @@ export default defineConfig({
         globIgnores: [
           '**/xlsx*',
           '**/chart-*',
+          // 슬라이드 코드 청크(pdf.js·jszip 포함, ~485 KiB)와 pdf.js 워커. xlsx·chart와
+          // 같은 이유다 — 대부분의 세션은 출석만 쓰고, 그 세션들이 배포마다 이 무게를
+          // 받을 이유가 없다. sw.ts가 처음 쓸 때 런타임 캐시에 담는다.
+          '**/slides-*',
+          '**/pdf.worker*',
           'slides/**',
           'bible-text/**',
           'cmaps/**',
           'standard_fonts/**',
-          '**/pdf.worker*',
         ],
       },
       manifest: {
