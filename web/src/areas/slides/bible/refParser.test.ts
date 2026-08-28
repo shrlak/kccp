@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { displayRef, normalizeContiScripture, parseRefToken, parseVerseInput } from '../src/bible/refParser';
+import { displayRef, normalizeContiScripture, parseRefToken, parseVerseInput } from './refParser';
 
 describe('parseRefToken', () => {
   it('parses a single verse', () => {

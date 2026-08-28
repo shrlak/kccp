@@ -1,7 +1,7 @@
 // Matching for the administrator-managed excluded-title list (공동체 고백송,
 // 예배 전 준비 찬양 등): songs whose recognized title matches an entry are
 // dropped from 찬양 편집 instead of becoming lyric cards.
-import { normalizeTitle } from '../storage/library';
+import { normalizeTitle } from './titles';
 
 /**
  * True when `title` matches one of the excluded entries. Matching is

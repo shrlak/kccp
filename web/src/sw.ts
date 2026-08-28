@@ -69,6 +69,27 @@ registerRoute(
   }),
 )
 
+// 슬라이드 정적 자산 — pptx 템플릿 넷(7.3 MB), pdf.js의 cmap·표준 글꼴, 그리고 뒤따라
+// 올 성경 본문(번역본당 4-5 MB). 선캐시에서 뺀 것들이라(vite.config.ts globIgnores) 슬라이드를
+// 실제로 만드는 사람의 첫 사용에서만 받고, 그 다음부터는 즉시 뜬다. 출석만 쓰는 사람은
+// 한 바이트도 받지 않는다.
+//
+// CacheFirst다: 이 파일들은 내용이 바뀌면 이름이 바뀌는 것이 아니라 아예 새 예배 자료가
+// 된다 — 배포마다 다시 받을 이유가 없다. maxEntries는 번역본 6 + 템플릿 5 + cmap 몇을
+// 감당할 만큼 넉넉히, 만료는 90일.
+registerRoute(
+  ({ url }) =>
+    url.origin === self.location.origin &&
+    new RegExp(`^${BASE}(slides|bible-text|cmaps|standard_fonts)/`).test(url.pathname),
+  new CacheFirst({
+    cacheName: 'kccp-slide-assets-v1',
+    plugins: [
+      new CacheableResponsePlugin({ statuses: [0, 200] }),
+      new ExpirationPlugin({ maxEntries: 240, maxAgeSeconds: 60 * 60 * 24 * 90, purgeOnQuotaError: true }),
+    ],
+  }),
+)
+
 // Pretendard is loaded from jsDelivr and is otherwise re-validated on every cold start;
 // cached here so a reload never waits on a third-party origin for the Korean text.
 registerRoute(

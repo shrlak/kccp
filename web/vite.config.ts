@@ -3,6 +3,7 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
+import { viteStaticCopy } from 'vite-plugin-static-copy'
 
 // Served from a GitHub Project Pages subpath (https://shrlak.github.io/kccp/), so assets,
 // the router basename, and the PWA scope must all be prefixed with it — a root-based ('/')
@@ -38,6 +39,19 @@ export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
+    // pdf.js needs cmaps for CID-keyed fonts (Adobe-Korea1 shows up in scanned 콘티 PDFs)
+    // and standard_fonts for the base-14 substitutes. Copied rather than bundled: the
+    // library fetches them by URL at parse time, off `import.meta.env.BASE_URL`.
+    viteStaticCopy({
+      targets: [
+        // stripBase가 있어야 한다. 이 플러그인(v4)은 매치된 경로의 디렉터리 구조를 dest
+        // 아래에 그대로 재현하므로, 없으면 파일이 dist/cmaps/node_modules/pdfjs-dist/cmaps/
+        // 로 들어간다 — 빌드는 초록으로 끝나고 런타임에만 cmap이 404가 난다. 두 폴더 다
+        // 평평해서 전부 벗겨도 안전하다.
+        { src: 'node_modules/pdfjs-dist/cmaps/*', dest: 'cmaps', rename: { stripBase: true } },
+        { src: 'node_modules/pdfjs-dist/standard_fonts/*', dest: 'standard_fonts', rename: { stripBase: true } },
+      ],
+    }),
     VitePWA({
       // A hand-written worker (src/sw.ts) rather than a generated one: the Web Share Target
       // contract needs a `fetch` handler for the POST the OS sends when someone shares a
@@ -53,7 +67,21 @@ export default defineConfig({
         // SheetJS (~860 kB) and Chart.js (~200 kB) load only when someone exports or opens
         // 분석, so precaching them would re-download ~1 MB on every deploy for features most
         // sessions never touch. sw.ts runtime-caches them on first use instead.
-        globIgnores: ['**/xlsx*', '**/chart-*'],
+        //
+        // 슬라이드 쪽 자산은 자릿수가 다르다. pptx 템플릿 넷이 7.3 MB, pdf.js의 cmaps·
+        // standard_fonts가 그 위에 얹히고, 성경 본문 27 MB가 뒤따라 온다 (→ 08). 선캐시에
+        // 딸려 들어가면 그 무게를 사용자 폰이 배포마다 받는다 — 출석만 쓰는 사람까지.
+        // 슬라이드는 실제로 만들 때만 받으면 되므로 전부 제외하고, sw.ts가 처음 쓸 때
+        // 런타임 캐시에 담는다.
+        globIgnores: [
+          '**/xlsx*',
+          '**/chart-*',
+          'slides/**',
+          'bible-text/**',
+          'cmaps/**',
+          'standard_fonts/**',
+          '**/pdf.worker*',
+        ],
       },
       manifest: {
         name: 'KCCP 출석',

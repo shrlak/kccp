@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isExcludedTitle } from '../../src/lib/utils/excludedTitles';
+import { isExcludedTitle } from './excludedTitles';
 
 const EXCLUDED = ['공동체 고백송', '예배 전 준비 찬양'];
 

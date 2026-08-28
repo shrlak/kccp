@@ -22,3 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Restored from assets/pptx/back-slides/*.b64 by scripts/assemble-pptx-assets.mjs
+# on every pre-build. 2.9 MB of derived bytes — the chunks are the source.
+public/slides/back-slides.pptx

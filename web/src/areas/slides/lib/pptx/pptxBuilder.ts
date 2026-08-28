@@ -20,10 +20,12 @@ const IMAGE_REL_TYPE =
 // feeds, and text pasted from Word uses vertical tabs for soft line breaks.
 // PowerPoint refuses to open a deck containing one ("needs repair").
 const XML_ILLEGAL =
+  // eslint-disable-next-line no-control-regex -- 제어문자를 찾는 것이 이 정규식의 일이다
   /[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
 
 export function xmlEscape(s: string): string {
   return s
+    // eslint-disable-next-line no-control-regex -- VT/FF는 제어문자이고, 그래서 지우는 것이다
     .replace(/[\u000B\u000C\u0085]/g, ' ') // VT/FF/NEL usually meant a line break — keep a gap
     .replace(XML_ILLEGAL, '')
     .replace(/&/g, '&amp;')

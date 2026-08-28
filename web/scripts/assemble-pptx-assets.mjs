@@ -5,7 +5,9 @@ import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const partsDirectory = resolve(root, 'assets/pptx/back-slides');
-const output = resolve(root, 'public/back-slides.pptx');
+// 나머지 슬라이드 자산과 같은 자리에 복원한다 (public/slides/). ppt에서는
+// public/ 바로 아래였다 — 저장소가 합쳐지면서 출석 쪽 자산과 섞이지 않도록 한 칸 내려왔다.
+const output = resolve(root, 'public/slides/back-slides.pptx');
 const expectedSha256 = '5bc17a3dfb5bf3455fb493b97838e4b6754702903bb85f943eda47ae793acad2';
 
 const partNames = (await readdir(partsDirectory))

@@ -2,12 +2,13 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import JSZip from 'jszip';
 import { describe, expect, it } from 'vitest';
-import { parseAnnouncements, buildAnnouncementDeck } from '../../src/lib/utils/announcementBuilder';
+import { parseAnnouncements, buildAnnouncementDeck } from './announcementBuilder';
+import { slideAsset } from '../../__fixtures__/slideAssets';
 
-const serviceTemplate = readFileSync(join(__dirname, '..', '..', 'public', 'service-template.pptx'));
-const sampleText = readFileSync(join(__dirname, '..', 'fixtures', 'announcements-sample.txt'), 'utf-8');
+const serviceTemplate = slideAsset('service-template.pptx');
+const sampleText = readFileSync(join(__dirname, '..', '..', '__fixtures__', 'announcements-sample.txt'), 'utf-8');
 const markdownSampleText = readFileSync(
-  join(__dirname, '..', 'fixtures', 'announcements-markdown-sample.txt'),
+  join(__dirname, '..', '..', '__fixtures__', 'announcements-markdown-sample.txt'),
   'utf-8',
 );
 

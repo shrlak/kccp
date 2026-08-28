@@ -5,8 +5,8 @@ import {
   planAllSlides,
   unmatchedTokens,
   sortSectionsByOrder,
-} from '../../src/lib/utils/slidePlanner';
-import type { Song } from '../../src/lib/utils/types';
+} from './slidePlanner';
+import type { Song } from './types';
 
 const lines = (n: number, prefix = 'line') =>
   Array.from({ length: n }, (_, i) => `${prefix} ${i + 1}`);

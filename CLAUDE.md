@@ -65,14 +65,50 @@
 가진 앱이라, 폴더가 출석 모양이면 그 모양대로 자란다.
 
     areas/attend/   admin · checkin · dongsan · kiosk · share  (옛 features/)
-    areas/slides/   ppt에서 들어올 자리 — 지금은 껍데기
+    areas/slides/   lib/pptx · lib/utils · lib/additionalFiles · bible · __fixtures__
     areas/AreaChoice.tsx
 
-`vendor/ppt/`는 아직 손대지 않은 원본이다. 다음 작업은 그 안의 **순수
-라이브러리**(`src/lib/pptx*`, `src/bible/`, `src/lib/lyrics/`)를
-`areas/slides/`로 `git mv` 하는 것 — 지우고 새로 만들면 `git blame`이 그 자리에서
-끊겨, 왜 이 줄이 이렇게 되었는지 묻는 순간 답이 사라진다. `vendor/ppt/worker/`는
-옮기지 않는다. Supabase 엣지 함수(`ai-proxy`)로 다시 짓는다.
+### 슬라이드 라이브러리 — 옮긴 것과 남은 것
+
+`vendor/ppt/src/lib`에서 **백엔드를 모르는 것들**만 `git mv`로 건너왔다:
+`lib/pptx/`(1,942줄) · `lib/utils/`(1,416줄) · `lib/additionalFiles/`(154줄) ·
+`bible/`(635줄). 테스트와 픽스처도 함께 왔고, 이 저장소 관행대로 **소스 옆에**
+붙였다 (`__fixtures__/`는 슬라이드 영역 뿌리에 한 벌).
+
+**이동 커밋에서는 내용을 고치지 않는다.** 이동과 수정을 한 커밋에 담으면 rename
+감지가 실패하고, 그 순간 `git blame`이 끊겨 두 저장소의 히스토리를 애써 합쳐 온
+것이 반쯤 무의미해진다. 재배선은 그 다음 커밋에서.
+
+옮기면서 드러난 것: 순수한 줄 알았던 셋이 Worker 라이브러리를 물고 있었다.
+`normalizeTitle`(→ `lib/utils/titles.ts`)과 `inspectDeckBytes`(→
+`lib/pptx/deckInspect.ts`) — 둘 다 순수 함수인데 Worker 옆에 살고 있었을 뿐이라
+새 집을 주었다. `storage/`는 Supabase Storage로 다시 지어질 것이므로 거기가
+최종 집이다. **`npx tsc -b --noEmit`이 이 종류의 오류를 잡는 자리다.**
+
+아직 `vendor/ppt/`에 남은 것: `lib/storage/`·`lib/learning/`(Worker에 묶여
+있어 옮기는 게 아니라 **다시 짜야** 한다), `lib/ai/`·`lib/lyrics/`의 Worker
+의존 부분, `components/`(4,890줄 — 마법사), 그리고 **성경 본문 27 MB**
+(`public/bible-text/`). `vendor/ppt/worker/`는 옮기지 않는다. Supabase 엣지
+함수(`ai-proxy`)로 다시 짓는다.
+
+### 슬라이드 정적 자산
+
+`web/public/slides/` — pptx 템플릿 넷(7.3 MB). **`back-slides.pptx`는 저장소에
+없다**: `web/assets/pptx/back-slides/*.b64`로 쪼개져 있고
+`scripts/assemble-pptx-assets.mjs`가 sha256을 대조해 복원한다. `package.json`의
+`predev`/`prebuild`/`pretest`에 걸려 있으니 **테스트 전에도 돌아야 한다** —
+없으면 pptx 병합 테스트가 ENOENT로 죽는다.
+
+pdf.js는 CID 글꼴(스캔한 콘티의 Adobe-Korea1) 때문에 `cmaps/`가, base-14 대체
+글꼴 때문에 `standard_fonts/`가 필요하다. `vite-plugin-static-copy`로 복사하는데
+**`rename: { stripBase: true }`가 없으면** 이 플러그인(v4)이 매치된 경로를 dest
+아래에 그대로 재현해서 `dist/cmaps/node_modules/pdfjs-dist/cmaps/`로 들어간다 —
+빌드는 초록으로 끝나고 런타임에만 404가 난다.
+
+**이 자산들은 전부 선캐시에서 뺐다** (`globIgnores`에 `slides/**` ·
+`bible-text/**` · `cmaps/**` · `standard_fonts/**` · `pdf.worker*`). 들어가면
+그 무게를 배포마다 사용자 폰이 받는다 — 출석만 쓰는 사람까지. `sw.ts`가 첫
+사용에 런타임 캐시(`kccp-slide-assets-v1`, CacheFirst)에 담는다.
 
 ### 번들 예산
 

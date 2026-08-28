@@ -1,12 +1,11 @@
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import JSZip from 'jszip';
 import { describe, expect, it } from 'vitest';
-import { buildBiblePptx } from '../src/bible/pptxBuilder';
-import type { VerseSlidePlan } from '../src/bible/versePlanner';
-import { findBrokenRelationships } from '../src/lib/pptx/pptxPackage';
+import { buildBiblePptx } from './pptxBuilder';
+import type { VerseSlidePlan } from './versePlanner';
+import { findBrokenRelationships } from '../lib/pptx/pptxPackage';
+import { slideAsset } from '../__fixtures__/slideAssets';
 
-const template = readFileSync(join(__dirname, '..', 'public', 'bible-template.pptx'));
+const template = slideAsset('bible-template.pptx');
 
 const plan: VerseSlidePlan = {
   globalData: {

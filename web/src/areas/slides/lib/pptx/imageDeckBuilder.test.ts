@@ -1,11 +1,10 @@
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import JSZip from 'jszip';
 import { describe, expect, it } from 'vitest';
-import { buildImageDeck, containRect } from '../../src/lib/pptx/imageDeckBuilder';
-import { assertPptxIntegrity, findBrokenRelationships } from '../../src/lib/pptx/pptxPackage';
+import { buildImageDeck, containRect } from './imageDeckBuilder';
+import { assertPptxIntegrity, findBrokenRelationships } from './pptxPackage';
+import { slideAsset } from '../../__fixtures__/slideAssets';
 
-const template = readFileSync(join(__dirname, '..', '..', 'public', 'template.pptx'));
+const template = slideAsset('template.pptx');
 const png1x1 = new Uint8Array(
   Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2nGQAAAAASUVORK5CYII=', 'base64'),
 );

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatOrder, normalizeToken, parseOrder } from '../../src/lib/utils/orderParser';
+import { formatOrder, normalizeToken, parseOrder } from './orderParser';
 
 describe('normalizeToken', () => {
   it('uppercases plain tokens', () => {

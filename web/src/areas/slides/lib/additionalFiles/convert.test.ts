@@ -1,11 +1,10 @@
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import JSZip from 'jszip';
 import { describe, expect, it } from 'vitest';
-import { convertAdditionalFile, inspectAdditionalUpload } from '../../src/lib/additionalFiles/convert';
+import { convertAdditionalFile, inspectAdditionalUpload } from './convert';
+import { slideAsset } from '../../__fixtures__/slideAssets';
 
-const frontSlides = readFileSync(join(__dirname, '..', '..', 'public', 'front-slides.pptx'));
-const template = readFileSync(join(__dirname, '..', '..', 'public', 'template.pptx'));
+const frontSlides = slideAsset('front-slides.pptx');
+const template = slideAsset('template.pptx');
 
 describe('additional PPTX conversion', () => {
   it('passes a valid PPTX through and reports its real slide count', async () => {

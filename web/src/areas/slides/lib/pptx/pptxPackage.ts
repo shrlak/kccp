@@ -260,6 +260,7 @@ export async function findBrokenRelationships(zip: JSZip): Promise<string[]> {
 // Characters XML 1.0 cannot carry at all (not even as entity references).
 // PowerPoint reports a deck containing one as corrupt and offers to repair it.
 const ILLEGAL_XML_CHAR =
+  // eslint-disable-next-line no-control-regex -- 제어문자를 찾는 것이 이 정규식의 일이다
   /[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
 
 /**

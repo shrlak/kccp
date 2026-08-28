@@ -1,10 +1,9 @@
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import JSZip from 'jszip';
 import { describe, expect, it } from 'vitest';
-import { assertPptxIntegrity, findBrokenRelationships, stripNonVisualParts } from '../../src/lib/pptx/pptxPackage';
+import { assertPptxIntegrity, findBrokenRelationships, stripNonVisualParts } from './pptxPackage';
+import { slideAsset } from '../../__fixtures__/slideAssets';
 
-const frontSlides = readFileSync(join(__dirname, '..', '..', 'public', 'front-slides.pptx'));
+const frontSlides = slideAsset('front-slides.pptx');
 
 describe('pptx package integrity', () => {
   it('removes notes parts and their incoming relationships together', async () => {

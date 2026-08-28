@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { detectAdditionalFileKind, moveAdditionalFile } from '../../src/lib/additionalFiles/files';
-import type { AdditionalFile } from '../../src/lib/additionalFiles/types';
+import { detectAdditionalFileKind, moveAdditionalFile } from './files';
+import type { AdditionalFile } from './types';
 
 function item(id: string): AdditionalFile {
   return {

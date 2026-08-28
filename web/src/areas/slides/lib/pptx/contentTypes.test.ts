@@ -7,7 +7,7 @@ import {
   removeContentTypeOverride,
   removeContentTypeOverridesWhere,
   setContentTypeOverride,
-} from '../../src/lib/pptx/contentTypes';
+} from './contentTypes';
 
 const MASTER = 'application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml';
 const SLIDE = 'application/vnd.openxmlformats-officedocument.presentationml.slide+xml';

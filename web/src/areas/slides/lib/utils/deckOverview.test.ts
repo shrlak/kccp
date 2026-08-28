@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { expandDeckSegment, songOverviewItems } from '../../src/lib/utils/deckOverview';
-import type { Song } from '../../src/lib/utils/types';
+import { expandDeckSegment, songOverviewItems } from './deckOverview';
+import type { Song } from './types';
 
 const song: Song = {
   id: 's1',

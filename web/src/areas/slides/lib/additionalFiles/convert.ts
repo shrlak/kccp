@@ -1,6 +1,6 @@
 /// <reference lib="dom" />
 
-import { inspectDeckBytes } from '../storage/pptLibrary';
+import { inspectDeckBytes } from '../pptx/deckInspect';
 import { buildImageDeck, type ImageSlideSource } from '../pptx/imageDeckBuilder';
 import { loadPdfTask } from '../utils/contiPdf';
 import { detectAdditionalFileKind } from './files';

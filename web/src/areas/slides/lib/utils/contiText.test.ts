@@ -12,13 +12,13 @@ import {
   parseCoverText,
   parseSermonInfoText,
   splitLyricsAndConfessionSongs,
-} from '../../src/lib/utils/contiText';
-import type { LibraryEntry } from '../../src/lib/utils/types';
+} from './contiText';
+import type { LibraryEntry } from './types';
 
-const coverText = readFileSync(join(__dirname, '..', 'fixtures', 'cover.txt'), 'utf-8');
-const coverTableText = readFileSync(join(__dirname, '..', 'fixtures', 'cover-table.txt'), 'utf-8');
-const continuationText = readFileSync(join(__dirname, '..', 'fixtures', 'cover-continuation.txt'), 'utf-8');
-const notesText = readFileSync(join(__dirname, '..', 'fixtures', 'notes.txt'), 'utf-8');
+const coverText = readFileSync(join(__dirname, '..', '..', '__fixtures__', 'cover.txt'), 'utf-8');
+const coverTableText = readFileSync(join(__dirname, '..', '..', '__fixtures__', 'cover-table.txt'), 'utf-8');
+const continuationText = readFileSync(join(__dirname, '..', '..', '__fixtures__', 'cover-continuation.txt'), 'utf-8');
+const notesText = readFileSync(join(__dirname, '..', '..', '__fixtures__', 'notes.txt'), 'utf-8');
 
 describe('parseCoverText', () => {
   const info = parseCoverText(coverText);

@@ -1,5 +1,5 @@
 import type { ContiInfo, ContiSongEntry, LibraryEntry } from './types';
-import { normalizeTitle } from '../storage/library';
+import { normalizeTitle } from './titles';
 
 /** `주님의 사랑 (E): 설명...` — title, musical key, description. */
 const SONG_LINE = /^(.{1,40}?)\s*[(（]\s*([A-Ga-g][#♯bB♭]?m?)\s*[)）]\s*[:：]\s*(.*)$/;

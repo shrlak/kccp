@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dragCarriesFiles, isPdfFile, readContiDrop } from '../../src/lib/utils/fileDrop';
+import { dragCarriesFiles, isPdfFile, readContiDrop } from './fileDrop';
 
 const pdf = (name = 'conti.pdf') => new File([new Uint8Array([1])], name, { type: 'application/pdf' });
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { buildVerseSlidePlan } from '../src/bible/versePlanner';
-import type { BibleRef, BookChapters } from '../src/bible/types';
+import { buildVerseSlidePlan } from './versePlanner';
+import type { BibleRef, BookChapters } from './types';
 
 // Small synthetic "translations" covering just John chapter 3, verses 14-17.
 // getVerseRange indexes verses by (verseNumber - 1), so verses 1-13 are padded
