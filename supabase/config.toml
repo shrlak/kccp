@@ -2,3 +2,9 @@ project_id = "kccp-attendance"
 
 [functions.attendance-api]
 verify_jwt = false
+
+# 자격 판정을 함수 안에서 한다 (auth.ts resolveAdmin) — attendance-api와 같은 이유로
+# 플랫폼의 JWT 검사를 끈다. 구글 로그인 토큰은 verifyAdminJwt가 직접 확인하고, 이 함수의
+# 모든 경로는 /api/slides/ 아래라 areaOf가 'slides' 영역을 요구한다.
+[functions.ai-proxy]
+verify_jwt = false
