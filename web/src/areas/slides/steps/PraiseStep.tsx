@@ -5,15 +5,24 @@
 // 올릴 일이 없어지는 것이 이 합치기의 원래 목적이었다. 두 길을 다 둔다: 목록에서 고르거나,
 // 아직 안 올라왔으면 그 자리에서 올린다.
 import { useEffect, useState } from 'react'
-import { loadConti } from '../lib/utils/contiPdf'
+import { loadConti, type ContiDocument } from '../lib/utils/contiPdf'
+import { recognizeConti, type RecognitionStatus } from '../lib/recognizeConti'
 import { contiUrl, getServices, getSetlists, uploadConti, type Service, type Setlist } from '../lib/setlists'
 import type { Song } from '../lib/utils/types'
 import { emptySong, type Wizard } from '../useWizard'
 import { Button, Card, Field, FilePicker, Notice, TextArea, TextInput } from '../ui'
 
-/** 콘티에서 읽은 것을 그 주의 내용으로 옮긴다. 가사는 아직 비어 있다 — 제목과 키만. */
-function songsFromConti(titles: { title: string; key?: string }[]): Song[] {
-  return titles.map((entry) => ({ ...emptySong(entry.title), key: entry.key }))
+/**
+ * 콘티 표지에서 읽은 것을 그 주의 내용으로 옮긴다. 가사는 아직 비어 있다 — 제목·키와,
+ * 그 곡의 악보가 몇 쪽인지(`pageIndex`)까지. 그 쪽 번호가 인식이 곡과 악보를 잇는
+ * 유일한 끈이다.
+ */
+function songsFromConti(entries: { title: string; key?: string; pageIndex?: number }[]): Song[] {
+  return entries.map((entry) => ({
+    ...emptySong(entry.title),
+    key: entry.key,
+    pageIndex: entry.pageIndex,
+  }))
 }
 
 export function PraiseStep({ wizard }: { wizard: Wizard }) {
@@ -22,6 +31,11 @@ export function PraiseStep({ wizard }: { wizard: Wizard }) {
   const [setlists, setSetlists] = useState<Setlist[]>([])
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // 콘티 문서를 들고 있는다 — 인식은 여기서 악보 쪽을 이미지로 다시 그려야 하고,
+  // PDF를 두 번 읽지 않기 위해서다.
+  const [conti, setConti] = useState<ContiDocument | null>(null)
+  const [recognizing, setRecognizing] = useState<RecognitionStatus | null>(null)
+  const [review, setReview] = useState<string[]>([])
 
   useEffect(() => {
     let alive = true
@@ -43,6 +57,8 @@ export function PraiseStep({ wizard }: { wizard: Wizard }) {
     try {
       const doc = await loadConti(bytes)
       const info = doc.parsed.info
+      setConti(doc)
+      setReview([])
       patch({
         setlistId,
         contiDate: info.date,
@@ -90,6 +106,25 @@ export function PraiseStep({ wizard }: { wizard: Wizard }) {
     }
   }
 
+  async function runRecognition() {
+    if (!conti) return
+    setError(null)
+    setRecognizing({ phase: 'render', progress: 0, message: '준비 중…' })
+    try {
+      const out = await recognizeConti(conti, state.songs, setRecognizing)
+      patch({ songs: out.songs })
+      setReview(out.lowConfidence)
+      if (out.recognizedPages === 0) {
+        setError('악보에서 가사를 찾지 못했습니다. 아래에서 직접 입력할 수 있습니다.')
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setRecognizing(null)
+    }
+  }
+
+  const recognizable = !!conti && state.songs.some((s) => typeof s.pageIndex === 'number')
   const live = setlists.filter((s) => s.hasConti && !s.archivedAt)
   const leadTeam = services.flatMap((s) => s.teams.filter((t) => t.leadsPpt).map((t) => ({ service: s, team: t })))
 
@@ -135,6 +170,35 @@ export function PraiseStep({ wizard }: { wizard: Wizard }) {
       </Card>
 
       <Card title={`곡 ${state.songs.length}`} hint="파트 이름과 순서가 슬라이드 순서가 됩니다.">
+        {recognizable && (
+          <div className="mb-4 flex flex-col gap-2 rounded-md bg-surface-alt p-3">
+            <div className="flex flex-wrap items-center gap-3">
+              <Button variant="primary" disabled={!!recognizing} onClick={() => void runRecognition()}>
+                {recognizing ? '읽는 중…' : '악보에서 가사 읽기'}
+              </Button>
+              {recognizing && (
+                <span className="font-mono text-xs text-subtle">{recognizing.message}</span>
+              )}
+            </div>
+            {recognizing && (
+              <div className="h-1 w-full overflow-hidden rounded-full bg-fill">
+                <div
+                  className="h-full bg-primary transition-[width] duration-300"
+                  style={{ width: `${Math.round(recognizing.progress * 100)}%` }}
+                />
+              </div>
+            )}
+            <p className="text-xs leading-relaxed text-subtle">
+              교회 계정의 AI 무료 한도를 씁니다. 읽어 낸 가사는 <strong className="font-medium">초안</strong>이라,
+              슬라이드로 나가기 전에 한 번 훑어 주세요.
+            </p>
+            {review.length > 0 && (
+              <Notice kind="error">
+                모델이 자신 없어 한 곡: {review.join(' · ')} — 특히 이 곡들을 확인해 주세요.
+              </Notice>
+            )}
+          </div>
+        )}
         <div className="flex flex-col gap-4">
           {state.songs.map((song) => (
             <SongEditor key={song.id} song={song} wizard={wizard} />
