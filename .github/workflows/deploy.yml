@@ -91,7 +91,7 @@ jobs:
           mkdir -p dist
           cp -r web/dist/* dist/
           # SPA fallback: GitHub Pages serves 404.html for unknown paths, so a deep-link
-          # refresh (e.g. /kccp-attendance/kiosk) loads the app and the router takes over.
+          # refresh (e.g. /kccp/kiosk) loads the app and the router takes over.
           cp dist/index.html dist/404.html
 
       - name: Setup Pages

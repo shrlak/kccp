@@ -721,7 +721,12 @@ function dongsanMemberQuery(pdb: any, link: DongsanLink, select: string) {
 // here on its own schedule; these just read). Returns null when the edge-function-side R2
 // secrets haven't been configured yet, so callers can fail with a clear setup message
 // instead of a raw SDK error.
+// R2 버킷 이름은 저장소 이름과 우연히 같을 뿐이다. 저장소가 kccp로 바뀌어도 **이 기본값은
+// 그대로 둔다** — 실제 버킷 이름이고, 바꾸면 지금까지 쌓인 백업과 끊어진다.
 function r2Bucket() { return Deno.env.get("R2_BUCKET")||"kccp-attendance-backups"; }
+// backup.yml이 사는 저장소. 이름이 kccp-attendance → kccp 로 바뀌었고, 옛 저장소는 지우지
+// 않고 남겨 두므로 슬러그가 틀려도 404가 아니라 *옛* 워크플로가 도는 조용한 실패가 된다.
+function backupRepo() { return Deno.env.get("BACKUP_REPO")||"shrlak/kccp"; }
 // 부서마다 자기 백업 줄기를 갖는다. 대학·청년부는 예전 그대로 backups/ (데이터베이스 전체를
 // 담는 재해복구 스냅숏), 장년부는 backups/adult/ 에 장년부 데이터만 담긴 별도 파일이 쌓인다.
 // 목록·다운로드·복원 모두 로그인한 부서의 접두사만 본다.
@@ -785,7 +790,7 @@ async function maybeAutoBackup(sb:any,p:string,part:Partition): Promise<void> {
   const {data:claimed}=await db(sb,part).from("config").update({[claimCol]:new Date().toISOString()})
     .eq("id",1).or(`${claimCol}.is.null,${claimCol}.lt.${cutoff}`).select("id");
   if(!claimed?.length) return; // within cooldown, or another isolate holds the claim
-  const res=await fetch("https://api.github.com/repos/shrlak/kccp-attendance/actions/workflows/backup.yml/dispatches",{
+  const res=await fetch(`https://api.github.com/repos/${backupRepo()}/actions/workflows/backup.yml/dispatches`,{
     method:"POST",
     headers:{"Authorization":"Bearer "+pat,"Accept":"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28","Content-Type":"application/json"},
     body:JSON.stringify({ref:"main",inputs:backupWorkflowInputs(part)}),
@@ -941,7 +946,7 @@ async function gpsAddresses(sb: SB, coords: {lat:number;lon:number}[]): Promise<
     if(key in out) continue;
     try {
       const u="https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=18&addressdetails=1&lat="+encodeURIComponent(c.lat)+"&lon="+encodeURIComponent(c.lon);
-      const res=await fetch(u,{headers:{"User-Agent":"kccp-attendance/1.0 (church attendance app)"},signal:AbortSignal.timeout(4000)});
+      const res=await fetch(u,{headers:{"User-Agent":"kccp/1.0 (church attendance app)"},signal:AbortSignal.timeout(4000)});
       if(!res.ok){await new Promise((r)=>setTimeout(r,1100));continue;}
       const j=await res.json();
       const address=typeof j?.display_name==="string"?j.display_name:"";
@@ -1596,7 +1601,7 @@ Deno.serve(async (req: Request) => {
       if(!role||role.role==="pastor") return fail(403,"Not authorized");
       const pat=Deno.env.get("GITHUB_PAT");
       if(!pat) return fail(500,"GITHUB_PAT not configured — set it in Supabase Edge Function secrets");
-      const res=await fetch("https://api.github.com/repos/shrlak/kccp-attendance/actions/workflows/backup.yml/dispatches",{
+      const res=await fetch(`https://api.github.com/repos/${backupRepo()}/actions/workflows/backup.yml/dispatches`,{
         method:"POST",
         headers:{"Authorization":"Bearer "+pat,"Accept":"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28","Content-Type":"application/json"},
         body:JSON.stringify({ref:"main",inputs:backupWorkflowInputs(role.partition)}),

@@ -15,6 +15,10 @@ const RETURN_KEY = 'kccp-oauth-return'
 // the tab falls back to the login screen after a long-idle reload.
 const ACTIVITY_KEY = 'kccp-admin-activity'
 const IDLE_TIMEOUT_MS = 2 * 60 * 60 * 1000 // 2h
+// The Vite base without its trailing slash — '/kccp' in production, '' in dev. Router
+// paths get appended to it. Derived, not spelled out: this used to be the literal
+// '/kccp-attendance' and the repo rename would have left it pointing at a dead subpath.
+const BASE_PATH = import.meta.env.BASE_URL.replace(/\/$/, '')
 
 function readPw(): string | null {
   try { return sessionStorage.getItem(PW_KEY) } catch { return null }
@@ -122,8 +126,9 @@ export const useAdminAuth = create<AdminAuthState>((set) => ({
       provider: 'google',
       // Redirect to the site root (a real file) so GitHub Pages serves it directly — no
       // dependence on the 404.html SPA fallback. The auth handler routes to /admin once
-      // the session verifies.
-      options: { redirectTo: 'https://shrlak.github.io/kccp-attendance/' },
+      // the session verifies. Fixed rather than derived from window.location because this
+      // exact string is what Supabase's redirect allow-list holds.
+      options: { redirectTo: 'https://shrlak.github.io/kccp/' },
     })
     // Page redirects away — control does not return here.
   },
@@ -208,7 +213,7 @@ function navigateAfterOAuth(): void {
     if (sessionStorage.getItem(RETURN_KEY) === '/kiosk') path = '/kiosk'
     sessionStorage.removeItem(RETURN_KEY)
   } catch { /* non-fatal */ }
-  const full = `/kccp-attendance${path}`
+  const full = `${BASE_PATH}${path}`
   if (window.location.pathname.startsWith(full)) return
   window.history.pushState({}, '', full)
   window.dispatchEvent(new PopStateEvent('popstate', { state: {} }))

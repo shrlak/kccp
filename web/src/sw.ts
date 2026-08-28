@@ -12,7 +12,7 @@ declare const self: ServiceWorkerGlobalScope & {
   __WB_MANIFEST: Array<string | import('workbox-precaching').PrecacheEntry>
 }
 
-// The app's own scope, e.g. '/kccp-attendance/' in production and '/' in dev.
+// The app's own scope, e.g. '/kccp/' in production and '/' in dev.
 const BASE = new URL(self.registration.scope).pathname
 const SHARE_PATH = `${BASE}share`
 

@@ -90,7 +90,7 @@ precache 1063 KiB** (영역 구조 도입 후, 슬라이드 코드가 들어오�
 Korean church (한국중앙교회 피츠버그) attendance system, serving **two departments out of one
 app**: 대학·청년부 and 장년부. The active app is a **React + Vite + TS** SPA in `web/`; the legacy
 single-file `index.html` was removed at cutover (recoverable from git history). **Production is
-live** at https://shrlak.github.io/kccp-attendance/.
+live** at https://shrlak.github.io/kccp/ (옛 주소 `/kccp-attendance/`는 죽었다 — 아래 배포 항목).
 
 ## Stack & layout
 - `web/` — React + Vite + TypeScript, Tailwind v4 (`@theme` in `web/src/index.css`), Zustand,
@@ -509,9 +509,24 @@ live** at https://shrlak.github.io/kccp-attendance/.
   it records an orphan full-timestamp version that re-breaks the `main` sync ("Remote migration
   versions not found") — afterwards DELETE that row from `supabase_migrations.schema_migrations`
   and add the repo file with the next free date prefix instead.
-- **Vite `base: '/kccp-attendance/'`** (GitHub Project Pages subpath) + `BrowserRouter` basename +
+- **Vite `base: '/kccp/'`** (GitHub Project Pages subpath) + `BrowserRouter` basename +
   `dist/404.html` SPA fallback. Without the base, every asset 404s → blank page.
   **Vercel PR previews serve at the domain root, so they look broken — preview-only; Pages is prod.**
+  저장소 이름이 `kccp-attendance` → `kccp`로 바뀌면서 이 값도 따라왔다. 안 고쳤다면 빌드도
+  배포도 초록으로 끝나고 브라우저만 옛 경로에서 자산을 찾다가 전부 404를 받았을 것이다 —
+  하얀 화면에 콘솔에만 흔적이 남는, 가장 고약한 종류의 실패다. `main.tsx`의 basename,
+  `sw.ts`의 스코프, `DongsanLinks`의 링크는 전부 `BASE_URL`을 읽으므로 따라온다. 남아 있던
+  **하드코딩 하나**(`useAdminAuth`의 OAuth 복귀 경로)는 `BASE_PATH`로 갈아 끼웠고, Supabase
+  redirect allow-list에 박히는 `redirectTo` 문자열만 여전히 상수다.
+- **옛 주소는 죽는다.** `shrlak.github.io/kccp-attendance/`를 홈 화면에 추가해 둔 사람들이
+  있다. **`kccp-attendance` 저장소를 지우지 말고** `index.html` 하나만 남겨 새 주소로
+  보내는 것이 가장 싸다 (이 저장소에서는 할 수 없는 일 — 저쪽 저장소의 작업이다).
+- **`backup.yml`의 `R2_BUCKET: kccp-attendance-backups`는 고치지 마라.** 실제 R2 버킷
+  이름이고, 바꾸면 지금까지의 백업과 끊어진다. 저장소 이름과 우연히 같을 뿐이다. 반대로
+  엣지 함수가 백업 워크플로를 부르는 **저장소 슬러그**는 따라와야 했다 (`backupRepo()`,
+  기본값 `shrlak/kccp`) — 틀리면 404가 아니라 *옛* 저장소의 워크플로가 도는 조용한 실패다.
+- 엑셀 내보내기 파일명(`kccp-attendance-2026-summer.xlsx`)은 사람이 받는 파일 이름이라
+  그대로 뒀다. 바꿀지는 취향이고, 바꾸면 `archive.test.ts`가 알려 준다.
 - Outbound network is allowlisted: `supabase.co` / `github.io` are blocked from this sandbox, so
   HTTP smoke tests of the live function/site fail with "Host not in allowlist". Verify via
   `mcp__Supabase__*` (DB/list_edge_functions) and the GitHub MCP instead.

@@ -4,10 +4,15 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
-// Served from a GitHub Project Pages subpath (https://shrlak.github.io/kccp-attendance/),
-// so assets, the router basename, and the PWA scope must all be prefixed with it — a
-// root-based ('/') build 404s every asset under the subpath and renders blank.
-const base = '/kccp-attendance/'
+// Served from a GitHub Project Pages subpath (https://shrlak.github.io/kccp/), so assets,
+// the router basename, and the PWA scope must all be prefixed with it — a root-based ('/')
+// build 404s every asset under the subpath and renders blank.
+//
+// 저장소 이름이 kccp-attendance → kccp 로 바뀌면서 이 한 줄이 따라와야 했다. 안 고치면
+// 빌드도 배포도 초록으로 끝나고 브라우저만 /kccp-attendance/… 를 찾다가 전부 404를 받는다:
+// 화면은 하얗고 흔적은 콘솔에만 남는, 디버깅이 고약한 종류의 실패다. main.tsx의 basename과
+// sw.ts의 스코프는 BASE_URL을 읽으므로 여기만 고치면 따라온다.
+const base = '/kccp/'
 
 const icons = [
   { src: 'icon-192.png', sizes: '192x192', type: 'image/png' },

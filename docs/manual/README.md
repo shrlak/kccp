@@ -1,7 +1,7 @@
 # KCCP 출석 시스템 사용 매뉴얼
 
 한국중앙교회 피츠버그 대학·청년부 출석 시스템의 공식 사용 안내서입니다.
-앱 주소: **https://shrlak.github.io/kccp-attendance/**
+앱 주소: **https://shrlak.github.io/kccp/**
 
 ## 매뉴얼 목차 — 내 역할에 맞는 문서를 보세요
 
