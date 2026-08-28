@@ -6,6 +6,7 @@ import { availableCardModels, buildCardRequest, cardModelChain, hasGen3Options, 
 import { csvUrl, matchPerson, mergeSheetMarks, nameCounts, normalizeMarks, parseAttendanceSheet, parseSheetUrl, sameMarks, type ParsedSheet } from "./sheetSync.ts";
 import { findLink, findLinkFor, newLinkToken, parseLinks, recentSundays, reconcileTermLinks, type DongsanLink } from "./dongsanLink.ts";
 import { deleteMembersKeepingAttendance } from "./memberDelete.ts";
+import { canTouchService, CONTI_BUCKET, DECK_BUCKET, isIsoDate, keyBelongsTo, objectKey, SIGNED_UPLOAD_TTL_SECONDS, SIGNED_URL_TTL_SECONDS, type SlidePartition } from "./slides.ts";
 // Decrypt-side of the weekly R2 backup pipeline (see scripts/backup/). age-encryption is
 // FiloSottile's own pure-JS port of `age` (no native/subprocess dependency, which Deno
 // edge functions can't shell out to anyway); postgres.js's .unsafe() with no parameters
@@ -2660,6 +2661,137 @@ Deno.serve(async (req: Request) => {
       const names=Object.keys(members).sort();
       const periodLabel=period==="today"?today:period==="weekly"?"최근 7일":period==="monthly"?today.slice(0,7):(fromP&&toP?fromP+" ~ "+toP:"전체");
       return new Response(buildReportHtml(names,dates,members,logs,periodLabel,gf,sf),{headers:{...CORS,"Content-Type":"text/html; charset=utf-8"}});
+    }
+
+    // ── 슬라이드: 예배·찬양팀·콘티 ────────────────────────────────────────────────────
+    // 경로가 /api/slides/ 아래라 areaOf()가 'slides' 영역을 요구한다 — auth()가 그 검사를
+    // 한다. 출석 비밀번호는 areas: ['attend'] 뿐이라 여기 전부에서 떨어진다.
+    //
+    // 파일은 이 함수를 지나가지 않는다. **서명된 URL만 발급**하고 바이트는 브라우저와
+    // Storage 사이에서 곧장 오간다 — Durable Object의 1 MiB 조각내기가 사라진 이유다.
+
+    // 예배와 그 예배에 서는 팀. 미디어 역할 계정은 자기 부의 것만 본다.
+    if(req.method==="GET"&&p==="/api/slides/services") {
+      const role=await auth(); if(!role) return fail(401,"Unauthorized");
+      const {data:services}=await sb.from("services").select("*").eq("active",true).order("sort_order");
+      const {data:teams}=await sb.from("teams").select("*").eq("active",true);
+      const {data:links}=await sb.from("team_services").select("*");
+      const cross=canChoosePartition(role);
+      const visible=(services||[]).filter((sv:any)=>canTouchService(role,sv.partition as SlidePartition,cross));
+      const teamById=new Map((teams||[]).map((t:any)=>[t.id,t]));
+      return ok({services:visible.map((sv:any)=>({
+        id:sv.id,name:sv.name,startsAt:sv.starts_at,partition:sv.partition,
+        // 2부에는 팀이 둘 온다 (헵시바 찬양팀 · 찬양대). leadsPpt가 그중 어느 쪽이
+        // 슬라이드가 되는지를 말한다 — 데이터베이스가 한 예배에 하나만 허용한다.
+        teams:(links||[]).filter((l:any)=>l.service_id===sv.id).map((l:any)=>{
+          const t=teamById.get(l.team_id); if(!t) return null;
+          return {id:t.id,name:t.name,kind:t.kind,leadsPpt:l.leads_ppt};
+        }).filter(Boolean),
+      }))});
+    }
+
+    // 그 주의 콘티들. 기본은 **보관되지 않은 것만** — 매주 지우던 규칙을 대신하는 자리다.
+    if(req.method==="GET"&&p==="/api/slides/setlists") {
+      const role=await auth(); if(!role) return fail(401,"Unauthorized");
+      const date=url.searchParams.get("date")||"";
+      const includeArchived=url.searchParams.get("archived")==="1";
+      let q=sb.from("setlists").select("*").order("service_date",{ascending:false}).limit(200);
+      if(date){ if(!isIsoDate(date)) return fail(400,"date must be YYYY-MM-DD"); q=q.eq("service_date",date); }
+      if(!includeArchived) q=q.is("archived_at",null);
+      const {data:rows,error}=await q; if(error) return fail(500,error.message);
+      const {data:services}=await sb.from("services").select("id,partition,name,starts_at,sort_order");
+      const byService=new Map((services||[]).map((sv:any)=>[sv.id,sv]));
+      const cross=canChoosePartition(role);
+      const out=[];
+      for(const row of rows||[]){
+        const sv=byService.get(row.service_id);
+        if(!sv||!canTouchService(role,sv.partition as SlidePartition,cross)) continue;
+        out.push({
+          id:row.id,teamId:row.team_id,serviceId:row.service_id,serviceDate:row.service_date,
+          serviceName:sv.name,partition:sv.partition,
+          hasConti:!!row.conti_path,hasDeck:!!row.deck_path,archivedAt:row.archived_at,
+        });
+      }
+      return ok({setlists:out});
+    }
+
+    // 콘티 자리를 잡고 업로드 URL을 받는다. 같은 팀·예배·날짜면 **그 줄을 다시 쓴다** —
+    // 새 줄을 만들면 UNIQUE가 막고, 막힌 자리에서 사람은 날짜를 고쳐 넣는다.
+    if(req.method==="POST"&&p==="/api/slides/setlists") {
+      const role=await auth(); if(!role) return fail(401,"Unauthorized");
+      const {teamId,serviceId,serviceDate,fileName}=body||{};
+      if(!teamId||!serviceId) return fail(400,"teamId and serviceId are required");
+      if(!isIsoDate(serviceDate)) return fail(400,"serviceDate must be YYYY-MM-DD");
+      const {data:sv}=await sb.from("services").select("id,partition").eq("id",serviceId).maybeSingle();
+      if(!sv) return fail(404,"service not found");
+      if(!canTouchService(role,sv.partition as SlidePartition,canChoosePartition(role))) return fail(403,"Forbidden");
+      const {data:link}=await sb.from("team_services").select("team_id").eq("team_id",teamId).eq("service_id",serviceId).maybeSingle();
+      if(!link) return fail(400,"이 팀은 그 예배에 서지 않습니다");
+
+      const {data:row,error}=await sb.from("setlists")
+        .upsert({team_id:teamId,service_id:serviceId,service_date:serviceDate,archived_at:null,updated_at:new Date().toISOString()},
+                {onConflict:"team_id,service_id,service_date"})
+        .select().single();
+      if(error||!row) return fail(500,error?.message||"could not open the setlist");
+
+      const key=objectKey({serviceDate,setlistId:row.id,name:fileName||"conti.pdf"});
+      const {data:signed,error:sErr}=await sb.storage.from(CONTI_BUCKET).createSignedUploadUrl(key,{upsert:true});
+      if(sErr) return fail(500,sErr.message);
+      await sb.from("setlists").update({conti_path:key,updated_at:new Date().toISOString()}).eq("id",row.id);
+      return ok({setlistId:row.id,bucket:CONTI_BUCKET,path:key,uploadUrl:signed?.signedUrl,token:signed?.token,expiresIn:SIGNED_UPLOAD_TTL_SECONDS});
+    }
+
+    // 콘티나 덱을 열어 보는 링크. 짧게 산다 — 자격 없이도 열리는 링크다.
+    const setlistFile=p.match(/^\/api\/slides\/setlists\/([0-9a-fA-F-]{36})\/(conti|deck)$/);
+    if(req.method==="GET"&&setlistFile) {
+      const role=await auth(); if(!role) return fail(401,"Unauthorized");
+      const [,setlistId,kind]=setlistFile;
+      const {data:row}=await sb.from("setlists").select("*").eq("id",setlistId).maybeSingle();
+      if(!row) return fail(404,"Not found");
+      const {data:sv}=await sb.from("services").select("partition").eq("id",row.service_id).maybeSingle();
+      if(!sv||!canTouchService(role,sv.partition as SlidePartition,canChoosePartition(role))) return fail(403,"Forbidden");
+      const path=kind==="conti"?row.conti_path:row.deck_path;
+      if(!path) return fail(404,"아직 올라오지 않았습니다");
+      // 저장된 키라도 다시 확인한다: 이 줄의 접두사가 아니면 서명하지 않는다.
+      if(!keyBelongsTo(path,row.service_date,row.id)) return fail(409,"stored path does not belong to this setlist");
+      const bucket=kind==="conti"?CONTI_BUCKET:DECK_BUCKET;
+      const {data:signed,error}=await sb.storage.from(bucket).createSignedUrl(path,SIGNED_URL_TTL_SECONDS);
+      if(error) return fail(500,error.message);
+      return ok({url:signed?.signedUrl,expiresIn:SIGNED_URL_TTL_SECONDS});
+    }
+
+    // 완성된 덱을 올릴 자리.
+    const deckUpload=p.match(/^\/api\/slides\/setlists\/([0-9a-fA-F-]{36})\/deck$/);
+    if(req.method==="POST"&&deckUpload) {
+      const role=await auth(); if(!role) return fail(401,"Unauthorized");
+      const setlistId=deckUpload[1];
+      const {data:row}=await sb.from("setlists").select("*").eq("id",setlistId).maybeSingle();
+      if(!row) return fail(404,"Not found");
+      const {data:sv}=await sb.from("services").select("partition").eq("id",row.service_id).maybeSingle();
+      if(!sv||!canTouchService(role,sv.partition as SlidePartition,canChoosePartition(role))) return fail(403,"Forbidden");
+      const key=objectKey({serviceDate:row.service_date,setlistId:row.id,name:body?.fileName||"deck.pptx"});
+      const {data:signed,error}=await sb.storage.from(DECK_BUCKET).createSignedUploadUrl(key,{upsert:true});
+      if(error) return fail(500,error.message);
+      await sb.from("setlists").update({deck_path:key,updated_at:new Date().toISOString()}).eq("id",row.id);
+      return ok({bucket:DECK_BUCKET,path:key,uploadUrl:signed?.signedUrl,token:signed?.token,expiresIn:SIGNED_UPLOAD_TTL_SECONDS});
+    }
+
+    // 보관 — **지우는 것이 아니다.** 목록에서 내려가고 파일은 남는다. 지난 주 콘티를
+    // 다시 찾는 일은 실제로 생기고, 지금까지 그 둘이 붙어 있던 것은 Durable Object의
+    // 용량 때문이었다.
+    const archive=p.match(/^\/api\/slides\/setlists\/([0-9a-fA-F-]{36})\/archive$/);
+    if(req.method==="POST"&&archive) {
+      const role=await auth(); if(!role) return fail(401,"Unauthorized");
+      const {data:row}=await sb.from("setlists").select("*").eq("id",archive[1]).maybeSingle();
+      if(!row) return fail(404,"Not found");
+      const {data:sv}=await sb.from("services").select("partition").eq("id",row.service_id).maybeSingle();
+      if(!sv||!canTouchService(role,sv.partition as SlidePartition,canChoosePartition(role))) return fail(403,"Forbidden");
+      const restore=body?.restore===true;
+      const {error}=await sb.from("setlists")
+        .update({archived_at:restore?null:new Date().toISOString(),updated_at:new Date().toISOString()})
+        .eq("id",row.id);
+      if(error) return fail(500,error.message);
+      return ok({id:row.id,archived:!restore});
     }
 
     return fail(404,"Not found");
