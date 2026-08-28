@@ -14,7 +14,10 @@
 // 뜨거운 길이라 15초마다 모두가 부른다. 둘을 갈라 두면 인식이 느린 날에도 출석은 그대로
 // 뜬다. 대신 자격 판정은 **같은 코드**를 부른다 (auth.ts) — 규칙이 두 벌이 되는 순간
 // 한쪽이 뒤처지고, 뒤처진 쪽이 열려 있는 쪽이 된다.
-import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+// 버전을 박는다. attendance-api는 버전 없는 형태를 쓰지만(합쳐 오기 전부터), deno lint의
+// no-unversioned-import 가 그것을 막는다 — 그리고 그 규칙이 옳다: 버전 없는 지정자는
+// 어느 날의 배포가 어느 타입 정의로 빌드됐는지를 알 수 없게 만든다.
+import "jsr:@supabase/functions-js@2/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { isOwner, resolveAdmin, type Role } from "../attendance-api/auth.ts";
 import { resolveOpenRouterRoute, sanitizeSharedSettings } from "./catalog.ts";
