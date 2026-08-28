@@ -17,6 +17,16 @@ vi.mock('./attend/admin/AdminApp', () => ({ AdminApp: () => <div>출석 패널</
 vi.mock('./attend/admin/LoginGate', () => ({ LoginGate: () => <div>로그인</div> }))
 vi.mock('./attend/admin/PartitionChoice', () => ({ PartitionChoice: () => <div>부 고르기</div> }))
 
+// 슬라이드 마법사의 첫 단계는 예배·콘티 목록을 서버에서 읽는다. 이 테스트가 묻는 것은
+// 라우팅이라 그 왕복은 세워 둔다.
+vi.mock('./slides/lib/setlists', () => ({
+  getServices: () => Promise.resolve({ services: [] }),
+  getSetlists: () => Promise.resolve({ setlists: [] }),
+  contiUrl: () => Promise.resolve({ url: '', expiresIn: 300 }),
+  uploadConti: () => Promise.resolve({ setlistId: 's1', path: 'p' }),
+  uploadDeck: () => Promise.resolve({ path: 'p' }),
+}))
+
 function signedInAs(identity: Partial<AdminIdentity>) {
   useAdminAuth.setState({
     status: 'authed',
@@ -60,10 +70,11 @@ describe('영역 라우팅 — 자격이 무엇을 띄울지 정한다', () => {
     // 지연 로드라 한 틱 뒤에 뜬다.
     expect(await screen.findByRole('heading', { name: '슬라이드' })).toBeInTheDocument()
     expect(screen.queryByText('출석 패널')).not.toBeInTheDocument()
-    // 장년부 계정이므로 1·2부만 보인다 — 3부는 대학·청년부의 것이다.
-    expect(screen.getByText('주일 1부')).toBeInTheDocument()
-    expect(screen.getByText('주일 2부')).toBeInTheDocument()
-    expect(screen.queryByText('주일 3부')).not.toBeInTheDocument()
+    // 마법사 첫 단계까지 왔다. 예배 목록은 이제 화면에 박혀 있지 않고 서버가 준다
+    // (services/team_services) — 그것이 맞게 좁혀지는지는 서버 쪽 테스트의 일이고,
+    // 여기서 묻는 것은 "어느 화면이 뜨는가"다.
+    expect(screen.getByRole('button', { name: /1 찬양/ })).toBeInTheDocument()
+    expect(screen.getByText('장년부')).toBeInTheDocument()
   })
 
   it('영역을 둘 가진 자격에게만 고르기 화면이 뜬다', async () => {

@@ -5,6 +5,12 @@ import { DEFAULT_SEMESTER_DATES, type SemesterDates, type SemesterSchedule, type
 const API_BASE =
   (import.meta.env.VITE_API_BASE as string | undefined) ??
   'https://loovulhchmmwagtvjnhc.supabase.co/functions/v1/attendance-api'
+// 슬라이드 인식의 AI 프록시. 별개의 엣지 함수인 이유는 상류 모델을 기다리는 요청이
+// /api/roster(앱의 뜨거운 길, 15초마다 모두가 부른다)와 같은 아이솔레이트를 붙들지 않게
+// 하려는 것이다. 자격은 같은 것을 실어 보낸다 — 서버 쪽도 같은 auth.ts를 부른다.
+export const AI_BASE =
+  (import.meta.env.VITE_AI_BASE as string | undefined) ??
+  API_BASE.replace(/\/attendance-api$/, '/ai-proxy')
 type Method = 'GET' | 'POST' | 'PUT' | 'DELETE'
 
 let adminPassword: string | null = null
@@ -27,6 +33,23 @@ export function setAdminPartition(partition: Partition | null) {
   } catch { /* non-fatal */ }
 }
 
+/**
+ * 이 요청이 누구인지 말하는 헤더들 — 구글 토큰이 있으면 그것, 없으면 비밀번호, 그리고
+ * 토큰일 때만 고른 부(部).
+ *
+ * 내보내는 이유는 JSON 왕복이 아닌 호출이 하나 있기 때문이다: 슬라이드 인식은 상류의
+ * 상태 코드를 그대로 읽어야 해서(429는 한도, 500은 모델 오류) 날 Response 가 필요하다.
+ * 그 하나 때문에 자격 규칙이 두 벌이 되면 뒤처지는 쪽이 생기고, 뒤처진 쪽은 대개
+ * **덜 실어 보내는** 쪽이라 알 수 없는 401로 나타난다.
+ */
+export function authHeaders(): Record<string, string> {
+  const headers: Record<string, string> = { 'X-Device-Id': getDeviceId() }
+  if (adminToken) headers['Authorization'] = `Bearer ${adminToken}`
+  else if (adminPassword) headers['X-Admin-Password'] = adminPassword
+  if (adminToken && adminPartition) headers['X-Partition'] = adminPartition
+  return headers
+}
+
 export async function api<T = unknown>(
   method: Method,
   path: string,
@@ -36,16 +59,27 @@ export async function api<T = unknown>(
   // extraction) pass their own budget.
   timeoutMs = 12_000,
 ): Promise<T> {
+  return apiAt(API_BASE, method, path, body, extraHeaders, timeoutMs)
+}
+
+// 같은 자격을 다른 엣지 함수로. api()가 이것의 얇은 껍데기다 — 자격을 싣는 규칙(구글
+// 토큰 우선, 없으면 비밀번호, 부는 토큰일 때만)이 두 벌이 되면 한쪽이 뒤처지고, 뒤처진
+// 쪽은 대개 **덜 실어 보내는** 쪽이라 알 수 없는 401로 나타난다.
+export async function apiAt<T = unknown>(
+  base: string,
+  method: Method,
+  path: string,
+  body?: unknown,
+  extraHeaders?: Record<string, string>,
+  timeoutMs = 12_000,
+): Promise<T> {
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), timeoutMs)
-  const headers: Record<string, string> = { 'X-Device-Id': getDeviceId() }
-  if (adminToken) headers['Authorization'] = `Bearer ${adminToken}`
-  else if (adminPassword) headers['X-Admin-Password'] = adminPassword
-  if (adminToken && adminPartition) headers['X-Partition'] = adminPartition
+  const headers = authHeaders()
   if (extraHeaders) Object.assign(headers, extraHeaders)
   if (body) headers['Content-Type'] = 'application/json'
   try {
-    const resp = await fetch(API_BASE + path, {
+    const resp = await fetch(base + path, {
       method,
       headers,
       signal: ctrl.signal,

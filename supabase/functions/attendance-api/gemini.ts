@@ -254,7 +254,7 @@ export function buildCardRequest(
         Authorization: `Bearer ${apiKey}`,
         // OpenRouter attribution headers — optional, but they keep free-tier requests
         // identifiable rather than anonymous.
-        "HTTP-Referer": "https://shrlak.github.io/kccp-attendance/",
+        "HTTP-Referer": "https://shrlak.github.io/kccp/",
         "X-Title": "KCCP Attendance",
       },
       body: {

@@ -65,14 +65,212 @@
 가진 앱이라, 폴더가 출석 모양이면 그 모양대로 자란다.
 
     areas/attend/   admin · checkin · dongsan · kiosk · share  (옛 features/)
-    areas/slides/   ppt에서 들어올 자리 — 지금은 껍데기
+    areas/slides/   lib/pptx · lib/utils · lib/additionalFiles · bible · __fixtures__
     areas/AreaChoice.tsx
 
-`vendor/ppt/`는 아직 손대지 않은 원본이다. 다음 작업은 그 안의 **순수
-라이브러리**(`src/lib/pptx*`, `src/bible/`, `src/lib/lyrics/`)를
-`areas/slides/`로 `git mv` 하는 것 — 지우고 새로 만들면 `git blame`이 그 자리에서
-끊겨, 왜 이 줄이 이렇게 되었는지 묻는 순간 답이 사라진다. `vendor/ppt/worker/`는
-옮기지 않는다. Supabase 엣지 함수(`ai-proxy`)로 다시 짓는다.
+### 슬라이드 라이브러리 — 옮긴 것과 남은 것
+
+`vendor/ppt/src/lib`에서 **백엔드를 모르는 것들**만 `git mv`로 건너왔다:
+`lib/pptx/`(1,942줄) · `lib/utils/`(1,416줄) · `lib/additionalFiles/`(154줄) ·
+`bible/`(635줄). 테스트와 픽스처도 함께 왔고, 이 저장소 관행대로 **소스 옆에**
+붙였다 (`__fixtures__/`는 슬라이드 영역 뿌리에 한 벌).
+
+**이동 커밋에서는 내용을 고치지 않는다.** 이동과 수정을 한 커밋에 담으면 rename
+감지가 실패하고, 그 순간 `git blame`이 끊겨 두 저장소의 히스토리를 애써 합쳐 온
+것이 반쯤 무의미해진다. 재배선은 그 다음 커밋에서.
+
+옮기면서 드러난 것: 순수한 줄 알았던 셋이 Worker 라이브러리를 물고 있었다.
+`normalizeTitle`(→ `lib/utils/titles.ts`)과 `inspectDeckBytes`(→
+`lib/pptx/deckInspect.ts`) — 둘 다 순수 함수인데 Worker 옆에 살고 있었을 뿐이라
+새 집을 주었다. `storage/`는 Supabase Storage로 다시 지어질 것이므로 거기가
+최종 집이다. **`npx tsc -b --noEmit`이 이 종류의 오류를 잡는 자리다.**
+
+아직 `vendor/ppt/`에 남은 것: `lib/storage/`·`lib/learning/`(Worker에 묶여
+있어 옮기는 게 아니라 **다시 짜야** 한다), `lib/ai/`·`lib/lyrics/`의 Worker
+의존 부분, `components/`(4,890줄 — 마법사), 그리고 **성경 본문 27 MB**
+(`public/bible-text/`). `vendor/ppt/worker/`는 옮기지 않는다. Supabase 엣지
+함수(`ai-proxy`)로 다시 짓는다.
+
+### 슬라이드 정적 자산
+
+`web/public/slides/` — pptx 템플릿 넷(7.3 MB). **`back-slides.pptx`는 저장소에
+없다**: `web/assets/pptx/back-slides/*.b64`로 쪼개져 있고
+`scripts/assemble-pptx-assets.mjs`가 sha256을 대조해 복원한다. `package.json`의
+`predev`/`prebuild`/`pretest`에 걸려 있으니 **테스트 전에도 돌아야 한다** —
+없으면 pptx 병합 테스트가 ENOENT로 죽는다.
+
+pdf.js는 CID 글꼴(스캔한 콘티의 Adobe-Korea1) 때문에 `cmaps/`가, base-14 대체
+글꼴 때문에 `standard_fonts/`가 필요하다. `vite-plugin-static-copy`로 복사하는데
+**`rename: { stripBase: true }`가 없으면** 이 플러그인(v4)이 매치된 경로를 dest
+아래에 그대로 재현해서 `dist/cmaps/node_modules/pdfjs-dist/cmaps/`로 들어간다 —
+빌드는 초록으로 끝나고 런타임에만 404가 난다.
+
+**이 자산들은 전부 선캐시에서 뺐다** (`globIgnores`에 `slides/**` ·
+`bible-text/**` · `cmaps/**` · `standard_fonts/**` · `pdf.worker*`). 들어가면
+그 무게를 배포마다 사용자 폰이 받는다 — 출석만 쓰는 사람까지. `sw.ts`가 첫
+사용에 런타임 캐시(`kccp-slide-assets-v1`, CacheFirst)에 담는다.
+
+### `ai-proxy` — 슬라이드의 AI 프록시
+
+`supabase/functions/ai-proxy/`. Worker가 존재한 이유의 절반이었다: 정적 사이트에는
+백엔드가 없어 Gemini·OpenRouter 키를 숨길 곳이 없었다.
+
+    POST /api/slides/ai/gemini/:model   → Gemini generateContent (키는 함수 시크릿)
+    POST /api/slides/ai/openrouter      → OpenRouter (카탈로그에 있는 모델만)
+    GET  /api/slides/ai/usage           → 오늘의 무료 한도 사용량
+    GET/POST /api/slides/ai/settings    → 공유 모델 풀·제외 곡 목록 (쓰기는 최고관리자·소유자)
+
+**여기서 버그가 아니라 기능이 하나 생겼다.** 지금까지는 배포된 ppt 앱을 연 누구나
+교회의 AI 무료 한도를 쓸 수 있었다. 이제 `areas`에 `'slides'`를 가진 계정만 쓴다 —
+경로가 `/api/slides/` 아래라 `areaOf()`가 그렇게 판정하고, 그 판정을 위해 코드를
+한 줄도 더 쓰지 않았다. `ai-proxy/routes.test.ts`가 그 접두사를 붙잡는다: 경로가
+한 칸만 벗어나면 `'attend'`로 떨어지고, **이 함수에서는 그것이 열리는 실패다.**
+
+- **별개의 함수인 이유**: 상류 모델을 기다리는 요청이 `/api/roster`(15초마다 모두가
+  부르는 뜨거운 길)와 같은 아이솔레이트를 붙들지 않게. 자격 판정은 **같은
+  `auth.ts`**를 부른다 — 규칙이 두 벌이 되면 한쪽이 뒤처지고, 뒤처진 쪽이 열려 있는
+  쪽이 된다. 클라이언트도 같은 이유로 `api()`와 `apiAt()`이 한 몸이다.
+- **카탈로그가 지갑의 경계다** (`catalog.ts`). OpenRouter로 나가는 모든 경로는
+  `:free`로 끝나고, 카탈로그 밖의 모델은 다른 것으로 바꾸는 게 아니라 **거절한다** —
+  조용히 바꾸면 아무도 요청하지 않은 모델에 공용 키를 쓰고, 정확도를 엉뚱한 모델의
+  것으로 기록한다. 저장할 때도 씻으므로 오래된 화면이 유료 모델을 설정에 심을 수 없다.
+- **OpenRouter 무료 엔드포인트는 입력 이미지와 출력이 공급자에 기록될 수 있다.**
+  ppt의 README에 적혀 있던 경고이고, 옮겨도 그대로다 — **민감한 악보에는 쓰지
+  않는다**는 규칙이 코드가 아니라 사람 쪽에 남아 있다.
+- **`public.ai_usage`와 `config.slides_ai_settings`는 부(部)를 모른다.** 무료 한도는
+  키 하나에 붙어 있어서 부마다 카운터를 두면 그 합이 실제 한도를 넘겨도 아무도
+  모른다. adult 스키마에 짝이 없는 것이 의도다. 대가: 둘 다 대학·청년부 백업 줄기에
+  실리므로, 대학·청년부를 복원하면 그날의 카운터와 공유 설정이 백업 시점으로 돌아간다.
+- 세는 것은 **`record_ai_usage()` 한 번의 왕복**이다. 읽고-더하고-쓰면 동시에 들어온
+  두 인식 요청이 서로의 증가를 덮어쓰고, 한도 카운터에서 그 손실은 넘긴 뒤에야 드러난다.
+- **날짜 칸은 공급자마다 다른 시간대에서 센다** (Gemini는 태평양, OpenRouter는 UTC).
+  서버 시간으로 한 번에 자르면 둘 중 하나는 반드시 틀린 칸에 들어가고, 그 어긋남은
+  자정 언저리에만 나타난다.
+- 함수 시크릿: `GEMINI_API_KEY` · `OPENROUTER_API_KEY` (선택: `GEMINI_DAILY_REQUEST_LIMIT`
+  · `OPENROUTER_DAILY_REQUEST_LIMIT`). **저장소에 두지 않는다.**
+- `deploy.yml`이 두 함수를 **따로** 배포한다 — 한 줄에 나열하면 어느 쪽이 막았는지
+  로그에 남지 않는다.
+
+### 파일은 Storage로 — 조각내기가 사라진 자리
+
+Worker가 존재한 이유의 나머지 절반. ppt에서 파일은 Durable Object 안에 **1 MiB
+조각으로 쪼개져** 살았고(큰 값을 넣을 수 없어서), 업로드는 조각마다 라우트를
+왕복했다. 이제 버킷 셋이다 — `kccp-conti` · `kccp-sheets` · `kccp-decks`, **전부
+비공개.**
+
+- **바이트는 엣지 함수를 지나가지 않는다.** 함수는 자격을 확인하고 **서명된 URL만
+  발급**하며, 파일은 브라우저와 Storage 사이에서 곧장 오간다. 조각내기가 없어진
+  이유가 그것이다 (`attendance-api/slides.ts` · `areas/slides/lib/setlists.ts`).
+- **서명 URL은 짧게 산다** (읽기 5분). 자격 없이도 열리는 링크라 화면·로그·카톡으로
+  옮겨진다. 받아 두고 주중에 돌려 쓰라고 주는 것이 아니다.
+- **객체 키는 `날짜/setlistId/이름`.** 가운데가 UUID인 것이 핵심이다 — 팀·예배
+  이름으로 지으면 이름을 고치는 순간 옛 파일이 미아가 된다. 이름은
+  `safeObjectName()`이 **경로가 아니라 이름으로** 만든다(마지막 조각만, 앞의 점과
+  제어문자는 제거). 저장된 키도 서명 전에 `keyBelongsTo()`로 다시 확인한다.
+- 함께 사라진 것: **"이 브라우저의 사본"**. ppt에는 로그인이 없어
+  localStorage/IndexedDB에 두고 서버와 병합했다. 계정이 생기면 사본은 하나다.
+
+### 콘티를 앱 안으로 — services · teams · team_services · setlists
+
+이 합치기의 **원래 목적**이다. 지금 미디어팀은 찬양팀이 카톡으로 보낸 콘티 PDF를
+다시 받아 올린다. 이 표들이 생기면 마법사의 첫 단계가 「업로드」에서 「고르기」로
+바뀐다.
+
+- **여기서는 부(部)가 스키마가 아니라 컬럼이다.** 출석에서 부의 경계는 *사람의
+  경계*라 스키마로 갈랐다 — 다른 부의 명단은 한 행도 보여서는 안 된다. 여기서 부는
+  *예배의 속성*이고, 1·2·3부가 한 화면에 나란히 보이는 것이 정상이다. 스키마로
+  가르면 "이번 주 예배 목록"을 두 번 읽어 합쳐야 하고, **그 합치는 코드가 곧 새는
+  자리**가 된다. 범위는 `partition` 컬럼 + `canTouchService()`로 좁힌다.
+- **`UNIQUE (team_id, service_id, service_date)` — `service_id`를 빼면 안 된다.**
+  팀·날짜만으로 잡으면 헵시바의 1부와 2부가 한 줄을 두고 서로 덮어쓴다(두 예배의
+  곡이 다르다). 그리고 그 덮어쓰기는 **예배 중 화면에** 나타난다.
+- **한 예배에서 슬라이드를 이끄는 팀은 최대 하나** (`team_services_one_leader`,
+  부분 유니크 인덱스). 2부에는 콘티가 둘 오고(헵시바 찬양팀 · 찬양대) 그중 어느
+  쪽이 슬라이드가 되는지를 `leads_ppt`가 정한다 — 기본은 헵시바. 둘이면 마법사가
+  어느 콘티를 열지 모르고, 그 판단이 주일 아침으로 밀린다.
+- **찬양대는 장년부에만** (`teams_choir_is_adult`). 데이터베이스가 아는 사실이라
+  데이터베이스가 지킨다 — 화면에서만 막으면 다음에 시드를 넣는 사람이 조용히 어긴다.
+- **매주 일요일 오후 5시 전체 삭제(cron)는 `archived_at`으로 바뀌었다.** 지운 이유가
+  Durable Object 용량이었다면 Storage로 옮긴 뒤에는 그 이유가 없다. 지난 주 콘티를
+  다시 찾는 일은 실제로 생기고, **지우는 것과 목록에서 안 보이는 것은 다른 일**이다.
+  보관 비용이 실제로 문제가 되면 그때 `pg_cron`으로 오래된 것부터 정리한다 — 지금
+  넣지 않는 이유는, 그것이 *문제가 되기 전에 데이터를 지우는 유일한 코드*가 되기
+  때문이다.
+
+### 마법사 — 여섯 단계
+
+`areas/slides/`: `SlidesShell`(단계 네비) + `useWizard`(그 주의 내용) +
+`steps/`(찬양 · 성경 말씀 · 설교 · 광고 · 추가 자료 · 다운로드) +
+**`lib/buildDeck.ts`(조립)**.
+
+- **순서가 곧 예배 순서다**: front → 찬양 → 기도 → 말씀 → 설교 → 기도 → 광고 →
+  back → 추가 자료. 바꾸는 것은 리팩터링이 아니라 예배를 바꾸는 일이다.
+- **`buildDeck`은 화면을 모른다.** ppt에서는 이 파이프라인이 `App.tsx` 안에서 열댓
+  개의 useState와 뒤엉켜 있었다. 떼어 낸 값이 곧 **테스트가 진짜 템플릿으로 진짜
+  덱을 만들어 볼 수 있다는 것**이고, 그것이 이 이관의 안전장치다 — 개요 항목 수와
+  실제 장 수가 1:1인지까지 확인한다.
+- 중간 병합은 전부 `STORE`, **마지막 하나만 `DEFLATE`**. 조각마다 다시 압축하면 같은
+  바이트를 여러 번 압축하게 되고 그 비용이 조립에서 가장 큰 부분이 된다.
+- `SERVICE_SLIDES`의 번호는 `service-template.pptx` 안의 **1-based 위치**다. 템플릿을
+  새로 받으면 함께 움직여야 한다 — 어긋나면 기도 자리에 광고가 나온다.
+- **ppt의 `styles.css`(3,515줄)는 들고 오지 않았다.** 마크업은 옮기되 클래스는 KCCP
+  토큰으로 갈아입혔다(`ui.tsx`). 그대로 옮기면 한 로그인 뒤의 두 화면이 서로 다른
+  앱처럼 보인다.
+- **번역본 지연 로드를 유지했다.** `loadTranslation`이 실제로 고른 것만 fetch로 받고,
+  `SlideAssets.bibleBase`가 그 접두사만 넘긴다. 여기서 무심코 정적 import로 바꾸면
+  27 MB가 첫 화면으로 딸려 온다.
+- **악보에서 가사 읽기가 붙었다** (`lib/recognizeConti.ts` + 찬양 단계의 버튼).
+  ppt에서는 이 흐름이 `LyricsGenerator.tsx`(1,841줄) 안에 화면 상태와 섞여 있었다.
+  `buildDeck`과 같은 규칙을 쓴다 — 들어가는 것은 콘티 문서와 곡 목록, 나오는 것은
+  가사가 채워진 곡 목록이고, 화면에는 진행 상황만 콜백으로 알린다.
+  - **곡과 악보를 잇는 것은 `song.pageIndex` 하나다.** 표지가 곡 순서를 적어 두고
+    `matchSongsToPages`가 그것을 쪽 번호에 붙인다. 순서대로 짝지으면 표지에 없는
+    악보 한 장 때문에 그 뒤가 전부 한 칸씩 밀린다 — 테스트가 그것을 붙잡는다.
+  - **표지가 짚어 준 쪽만 읽는다.** `musicPages` 전부를 읽으면 곡이 아닌 악보(특송
+    등)에까지 무료 한도를 쓴다.
+  - 신뢰도가 낮은 곡은 이름으로 돌려주고 화면이 그것부터 보여 준다. 읽어 낸 가사는
+    **초안**이고, 그렇게 화면에 적혀 있다.
+- 아직 오지 않은 것: **편집기 보기**(`SlideOverviewList` · `SlideThumbnail` — 없어도
+  슬라이드는 만들어진다)와 웹에서 가사를 긁어 오는 `webLyrics`(→ 아래).
+
+### 인식 라이브러리 — 키가 브라우저에 없다
+
+`lib/ai/`(3,672줄)와 `lib/lyrics/`가 건너왔다. 옮기고 보니 경계는 파일이 아니라
+**파일 안**에 있었다: `aiSettings.ts`는 위 300줄이 설정 모델이고 아래 100줄만
+localStorage + Worker 전송이었다. 그래서 파일째 옮기고 전송만 갈아 끼웠다.
+
+- **브라우저가 상류를 직접 부르는 길을 없앴다.** ppt에는 `geminiApiKey` ·
+  `openrouterApiKey` 칸이 있었다 — 프록시 없이 배포된 정적 사이트에서 사람이 자기
+  키를 붙여 쓰던 길이다. 그 길로는 **영역 검사도 무료 한도 계량도 지나가지 않는다.**
+  키 칸을 `AiSettings`에서 지웠고, `scoreAi`·`scoreNvidia`는 이제 `ai-proxy` 하나만
+  부른다. `scoreAi.test.ts`가 그 문장을 붙잡는다 (`generativelanguage.googleapis.com`
+  이 URL에 나오면 실패).
+- **`pushSharedSettings`에서 비밀번호 인자가 사라졌다.** 그 문자열은 로그인이 없던
+  앱의 무른 관문이었다(코드에 박혀 있었다). 지금은 서버가 최고관리자·소유자인지
+  본다 — 인자를 남겨 두면 아무것도 지키지 않으면서 지키는 것처럼 보인다.
+- **자격 헤더는 `lib/api.ts`의 `authHeaders()` 한 곳에서 만든다.** 인식만은 날
+  `Response`가 필요해서(429는 오늘 한도가 찬 것, 500은 그 모델이 이 쪽을 못 읽은
+  것 — 반응이 다르다) `apiAt`을 못 쓰는데, 그 하나 때문에 자격 규칙이 두 벌이 되면
+  뒤처지는 쪽이 생기고 뒤처진 쪽은 대개 **덜 실어 보내는** 쪽이라 알 수 없는 401로
+  나타난다.
+- **`aiSettings.test.ts`가 카탈로그를 서버와 맞춰 본다** — 짝이 Worker의
+  `config.js`에서 `ai-proxy/catalog.ts`로 바뀌었다. 어긋나면 화면이 프록시가 거절할
+  모델을 사람에게 권한다 (`partition.ts` ↔ `auth.ts` 와 같은 규칙).
+- **`webLyrics.ts`만 `vendor/ppt/`에 남는다.** Worker의 가사 스크레이핑 라우트를
+  부르는데 `ai-proxy`에 그 짝이 없다 — 순수하지 않은 것이 아니라 **옮길 자리가 아직
+  없는 것**이다. 그것을 물고 있는 `mergeWebLyrics`도 함께 남는다.
+- `lib/storage/library.ts`에서 재사용 판단 셋(`entryVerification` · `isGroundTruth` ·
+  `selectReusableEntry`)을 `lib/lyrics/songLibrary.ts`로 갈라냈다 —
+  `normalizeTitle`과 같은 모양이다. 배열이 어디서 오는지는 그 파일이 모른다.
+- 이 라이브러리들은 아직 **아무 화면도 import 하지 않으므로** 슬라이드 청크에 들어가지
+  않는다 (484.8 KiB 그대로). 인식 화면이 붙는 순간 늘어날 자리이고, 그때 예산 검사가
+  먼저 말한다.
+
+**청크 이름은 `vite.config.ts`가 정한다** (`chunkFileNames` → `assets/slides-[hash].js`).
+lazy import가 만든 경계에 안정된 이름만 붙이는 일이고, 그 이름으로 선캐시에서 뺀다.
+`manualChunks`로 몰면 안 된다 — 롤다운이 공유 모듈(supabase 클라이언트, 로그인
+스토어)까지 그 청크에 넣어 버려서 **랜딩이 슬라이드 청크를 정적으로 import 하게
+된다.** 막으려던 것을 정확히 반대로 하는 셈이고, 한 번 그렇게 만들어 보고 알았다.
 
 ### 번들 예산
 
@@ -90,7 +288,7 @@ precache 1063 KiB** (영역 구조 도입 후, 슬라이드 코드가 들어오�
 Korean church (한국중앙교회 피츠버그) attendance system, serving **two departments out of one
 app**: 대학·청년부 and 장년부. The active app is a **React + Vite + TS** SPA in `web/`; the legacy
 single-file `index.html` was removed at cutover (recoverable from git history). **Production is
-live** at https://shrlak.github.io/kccp-attendance/.
+live** at https://shrlak.github.io/kccp/ (옛 주소 `/kccp-attendance/`는 죽었다 — 아래 배포 항목).
 
 ## Stack & layout
 - `web/` — React + Vite + TypeScript, Tailwind v4 (`@theme` in `web/src/index.css`), Zustand,
@@ -509,9 +707,24 @@ live** at https://shrlak.github.io/kccp-attendance/.
   it records an orphan full-timestamp version that re-breaks the `main` sync ("Remote migration
   versions not found") — afterwards DELETE that row from `supabase_migrations.schema_migrations`
   and add the repo file with the next free date prefix instead.
-- **Vite `base: '/kccp-attendance/'`** (GitHub Project Pages subpath) + `BrowserRouter` basename +
+- **Vite `base: '/kccp/'`** (GitHub Project Pages subpath) + `BrowserRouter` basename +
   `dist/404.html` SPA fallback. Without the base, every asset 404s → blank page.
   **Vercel PR previews serve at the domain root, so they look broken — preview-only; Pages is prod.**
+  저장소 이름이 `kccp-attendance` → `kccp`로 바뀌면서 이 값도 따라왔다. 안 고쳤다면 빌드도
+  배포도 초록으로 끝나고 브라우저만 옛 경로에서 자산을 찾다가 전부 404를 받았을 것이다 —
+  하얀 화면에 콘솔에만 흔적이 남는, 가장 고약한 종류의 실패다. `main.tsx`의 basename,
+  `sw.ts`의 스코프, `DongsanLinks`의 링크는 전부 `BASE_URL`을 읽으므로 따라온다. 남아 있던
+  **하드코딩 하나**(`useAdminAuth`의 OAuth 복귀 경로)는 `BASE_PATH`로 갈아 끼웠고, Supabase
+  redirect allow-list에 박히는 `redirectTo` 문자열만 여전히 상수다.
+- **옛 주소는 죽는다.** `shrlak.github.io/kccp-attendance/`를 홈 화면에 추가해 둔 사람들이
+  있다. **`kccp-attendance` 저장소를 지우지 말고** `index.html` 하나만 남겨 새 주소로
+  보내는 것이 가장 싸다 (이 저장소에서는 할 수 없는 일 — 저쪽 저장소의 작업이다).
+- **`backup.yml`의 `R2_BUCKET: kccp-attendance-backups`는 고치지 마라.** 실제 R2 버킷
+  이름이고, 바꾸면 지금까지의 백업과 끊어진다. 저장소 이름과 우연히 같을 뿐이다. 반대로
+  엣지 함수가 백업 워크플로를 부르는 **저장소 슬러그**는 따라와야 했다 (`backupRepo()`,
+  기본값 `shrlak/kccp`) — 틀리면 404가 아니라 *옛* 저장소의 워크플로가 도는 조용한 실패다.
+- 엑셀 내보내기 파일명(`kccp-attendance-2026-summer.xlsx`)은 사람이 받는 파일 이름이라
+  그대로 뒀다. 바꿀지는 취향이고, 바꾸면 `archive.test.ts`가 알려 준다.
 - Outbound network is allowlisted: `supabase.co` / `github.io` are blocked from this sandbox, so
   HTTP smoke tests of the live function/site fail with "Host not in allowlist". Verify via
   `mcp__Supabase__*` (DB/list_edge_functions) and the GitHub MCP instead.

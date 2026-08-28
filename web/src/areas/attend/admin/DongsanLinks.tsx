@@ -183,7 +183,7 @@ export function DongsanLinksSection({ partition }: { partition: Partition }) {
   )
 }
 
-// 링크는 이 앱이 사는 주소 그대로다 (GitHub Pages의 /kccp-attendance/ 하위 경로 포함).
+// 링크는 이 앱이 사는 주소 그대로다 (GitHub Pages의 /kccp/ 하위 경로 포함).
 // 이 파일 안에서만 쓴다 — 컴포넌트 파일이 값까지 내보내면 (react-refresh) 핫 리로드가 깨진다.
 function linkUrl(token: string) {
   const base = import.meta.env.BASE_URL || '/'

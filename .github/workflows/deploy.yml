@@ -91,7 +91,7 @@ jobs:
           mkdir -p dist
           cp -r web/dist/* dist/
           # SPA fallback: GitHub Pages serves 404.html for unknown paths, so a deep-link
-          # refresh (e.g. /kccp-attendance/kiosk) loads the app and the router takes over.
+          # refresh (e.g. /kccp/kiosk) loads the app and the router takes over.
           cp dist/index.html dist/404.html
 
       - name: Setup Pages
@@ -148,9 +148,20 @@ jobs:
           # directly. Bump deliberately (npm view supabase version).
           version: 2.109.0
 
-      - name: Deploy Edge Function
+      # 두 함수 다. 자격 판정은 둘 다 함수 안에서 하므로(auth.ts resolveAdmin)
+      # --no-verify-jwt 이고, ai-proxy 의 모든 경로는 /api/slides/ 아래라 areaOf 가
+      # 슬라이드 영역을 요구한다 — 출석 비밀번호로는 상류 키에 닿을 수 없다.
+      #
+      # 한 줄로 둘을 배포하지 않는 이유: 이름을 나열하면 하나가 실패해도 나머지가
+      # 이미 나간 뒤일 수 있다. 단계를 갈라 두면 어느 쪽이 막았는지가 로그에 남고,
+      # 실패한 단계에서 잡이 멈춰 Pages 가 그대로 서 있는다 (deploy 잡의 needs).
+      - name: Deploy Edge Function — attendance-api
         if: ${{ env.SUPABASE_ACCESS_TOKEN != '' }}
         run: supabase functions deploy attendance-api --project-ref loovulhchmmwagtvjnhc --no-verify-jwt
+
+      - name: Deploy Edge Function — ai-proxy
+        if: ${{ env.SUPABASE_ACCESS_TOKEN != '' }}
+        run: supabase functions deploy ai-proxy --project-ref loovulhchmmwagtvjnhc --no-verify-jwt
 
       - name: Skip (no token configured)
         if: ${{ env.SUPABASE_ACCESS_TOKEN == '' }}

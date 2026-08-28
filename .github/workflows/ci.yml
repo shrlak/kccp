@@ -1,0 +1,107 @@
+# PR과 main에서 도는 검사. 지금까지 이 저장소에는 배포 워크플로만 있었고, 테스트는
+# 사람이 손으로 돌렸다 — 합치기 전에는 한 사람이 다 알고 있어서 견뎠지만, 이제
+# vitest 900여 개와 deno 140여 개가 두 저장소에서 왔다.
+#
+# 선캐시 예산이 여기 있는 이유가 특히 그렇다: 랜딩이 조금씩 무거워지는 것은 아무도
+# 못 알아채다가 어느 주일 아침에 드러난다.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web:
+    name: web — lint · types · tests · 번들 예산
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          # deploy.yml과 같은 단일 출처 (web/.nvmrc).
+          node-version-file: web/.nvmrc
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - run: npm ci --prefix web
+
+      - name: Lint
+        run: npm --prefix web run lint
+
+      - name: Typecheck
+        run: npx tsc -b --noEmit
+        working-directory: web
+
+      # pretest가 assemble-pptx-assets를 부른다 — back-slides.pptx 는 저장소에 없고
+      # assets/pptx/back-slides/*.b64 에서 복원된다. 없으면 pptx 병합 테스트가 ENOENT로 죽는다.
+      - name: Tests
+        run: npm --prefix web test
+
+      - name: Build
+        run: npm --prefix web run build
+
+      # 슬라이드 영역이 lazy로 남아 있는 한 이 숫자는 거의 움직이지 않는다. 크게 뛰면
+      # 무언가 랜딩으로 샌 것이고, 그것이 이 검사가 잡으려는 유일한 사건이다.
+      - name: 선캐시 예산
+        run: node scripts/check-precache-budget.mjs
+        working-directory: web
+
+  functions:
+    name: 엣지 함수 — deno
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Tests
+        run: deno test --allow-env supabase/functions/
+
+      # index.ts 는 아직 타입이 깨끗하지 않다(합쳐 온 코드). 새로 쓰는 모듈만 검사해
+      # 적어도 더 나빠지지는 않게 한다.
+      - name: Typecheck (새 모듈)
+        run: deno check supabase/functions/ai-proxy/index.ts supabase/functions/attendance-api/slides.ts
+
+      - name: Lint
+        run: deno lint supabase/functions/ai-proxy/ supabase/functions/attendance-api/slides.ts
+
+  migrations:
+    name: 마이그레이션 재생
+    runs-on: ubuntu-24.04
+    # 백업 검증이 하는 것과 같은 확인을 PR에서 먼저 한다: 빈 데이터베이스에 전부
+    # 순서대로 흘려 넣어 본다. 이름이 어긋나거나 의존 순서가 뒤집힌 파일은 여기서 죽는다.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+        ports: [5432:5432]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Replay every migration
+        env:
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          psql -h localhost -U postgres -q <<'SQL'
+          CREATE EXTENSION IF NOT EXISTS pgcrypto;
+          -- Supabase가 제공하는 것들. 마이그레이션이 있다고 가정하는 최소한만 세운다.
+          CREATE SCHEMA IF NOT EXISTS storage;
+          CREATE TABLE IF NOT EXISTS storage.buckets (id text primary key, name text, public boolean default false);
+          CREATE SCHEMA IF NOT EXISTS auth;
+          SQL
+          for f in supabase/migrations/*.sql; do
+            echo "── $f"
+            psql -h localhost -U postgres -v ON_ERROR_STOP=1 -q -f "$f"
+          done

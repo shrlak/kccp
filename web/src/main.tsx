@@ -33,7 +33,7 @@ if (
 }
 
 // Match the Vite base (GitHub Project Pages subpath) so client routes resolve under
-// /kccp-attendance/ instead of the domain root. BASE_URL is '/' in dev → basename '/'.
+// /kccp/ instead of the domain root. BASE_URL is '/' in dev → basename '/'.
 const basename = import.meta.env.BASE_URL.replace(/\/$/, '') || '/'
 
 // share.html is the iPhone home-screen entry (see the comment at the top of that file):
