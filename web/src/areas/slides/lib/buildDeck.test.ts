@@ -38,6 +38,13 @@ const emptyInput = (): DeckInput => ({
   additionalFiles: [],
 })
 
+/** 덱의 모든 장에 적힌 글자 — 고백송이 바뀌었는지는 결국 화면에 적힌 것으로 본다. */
+async function deckText(deck: Uint8Array): Promise<string> {
+  const zip = await JSZip.loadAsync(deck)
+  const slides = Object.keys(zip.files).filter((f) => /^ppt\/slides\/slide\d+\.xml$/.test(f))
+  return (await Promise.all(slides.map((f) => zip.file(f)!.async('string')))).join('\n')
+}
+
 async function slideCount(deck: Uint8Array): Promise<number> {
   const zip = await JSZip.loadAsync(deck)
   return Object.keys(zip.files).filter((f) => /^ppt\/slides\/slide\d+\.xml$/.test(f)).length
@@ -99,6 +106,66 @@ describe('buildDeck', () => {
     expect(withSermon.overview.length).toBe(withoutSermon.overview.length + sermonSlides.length)
     expect(sermonSlides[0].subtitle).toBe('2026-08-30 말씀.pptx')
     expect(withSermon.overview.length).toBe(await slideCount(withSermon.merged))
+  }, 90_000)
+
+  it('설교 후 찬양은 여는 찬양이 아니라 설교 뒤의 기도 다음이고, 기도 한 장이 더 붙는다', async () => {
+    const input: DeckInput = {
+      ...emptyInput(),
+      songs: [
+        song(),
+        song({ id: 's2', title: '축복하노라', postSermon: true }),
+      ],
+      announcementText: '1. <여름 수련회>\n8월 30일 토요일',
+    }
+    const { merged, overview } = await buildDeck(input, assets)
+    expect(overview.length).toBe(await slideCount(merged))
+
+    const titles = overview.map((o) => o.label)
+    const opening = titles.indexOf('주 은혜임을')
+    const postSermon = titles.indexOf('축복하노라')
+    const prayers = overview.flatMap((o, i) => (o.kind === 'prayer' ? [i] : []))
+    const announcement = overview.findIndex((o) => o.kind === 'announcement')
+
+    // 여는 찬양 → 기도 → (말씀·설교) → 기도 → **설교 후 찬양** → 기도 → 광고.
+    expect(opening).toBeLessThan(prayers[0])
+    expect(postSermon).toBeGreaterThan(prayers[1])
+    expect(postSermon).toBeLessThan(announcement)
+    // 그 곡과 뒤따르는 기도는 예배 순서의 한 칸이다 — 기도가 셋이 되고, 마지막 기도는
+    // 설교 후 찬양과 광고 **사이**에 온다.
+    expect(prayers).toHaveLength(3)
+    expect(prayers[2]).toBeGreaterThan(postSermon)
+    expect(prayers[2]).toBeLessThan(announcement)
+  }, 90_000)
+
+  it('설교 후 찬양이 없는 주에는 기도가 연달아 두 장 나오지 않는다', async () => {
+    const { overview } = await buildDeck({ ...emptyInput(), songs: [song()] }, assets)
+    expect(overview.filter((o) => o.kind === 'prayer')).toHaveLength(2)
+  }, 60_000)
+
+  it('공동체 고백송은 back 덱 안에서 고쳐 쓰인다 — 뒤에 덧붙이는 것이 아니다', async () => {
+    const confessionSong = song({
+      id: 'confession',
+      title: '나의 반석이신 하나님',
+      sections: [{ label: 'C', lines: ['나의 반석이신 하나님', '내 삶의 피난처 되시네'] }],
+      order: ['C'],
+    })
+    const withConfession = await buildDeck({ ...emptyInput(), confessionSong }, assets)
+    const plain = await buildDeck(emptyInput(), assets)
+
+    const text = await deckText(withConfession.merged)
+    expect(text).toContain('나의 반석이신 하나님')
+    // 번들된 back 덱이 찍던 곡은 **대체된 것**이지 옆에 남아 있는 것이 아니다.
+    expect(text).not.toContain('Celebrate the light 온 세상 비추네')
+    // 그래서 장 수는 그 블록의 길이 차이만큼만 움직인다 — 곡 하나가 통째로 덧붙지 않는다.
+    expect(Math.abs(withConfession.overview.length - plain.overview.length)).toBeLessThanOrEqual(2)
+    expect(withConfession.overview.length).toBe(await slideCount(withConfession.merged))
+  }, 90_000)
+
+  it('가사 없는 고백송은 back 덱을 건드리지 않는다 — 빈 슬라이드가 주일 아침에 나온다', async () => {
+    const plain = await buildDeck(emptyInput(), assets)
+    const nullSong = await buildDeck({ ...emptyInput(), confessionSong: null }, assets)
+    expect(nullSong.overview.length).toBe(plain.overview.length)
+    expect(await deckText(nullSong.merged)).toContain('Celebrate the light 온 세상 비추네')
   }, 90_000)
 
   it('완성된 덱은 PowerPoint가 열 수 있는 모양이다', async () => {

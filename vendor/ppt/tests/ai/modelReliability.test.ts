@@ -14,8 +14,8 @@ import {
   rankModels,
   scoreObservation,
   type ModelReliability,
-} from './modelReliability';
-import type { RecognitionModelInfo } from './aiSettings';
+} from '../../src/lib/ai/modelReliability';
+import type { RecognitionModelInfo } from '../../src/lib/ai/aiSettings';
 import {
   mergeModelEvaluation as workerMerge,
   modelStatsKey,

@@ -145,10 +145,23 @@ export const DEFAULT_ATTEMPT_ORDER: RecognitionAttempt[] = RECOGNITION_MODEL_CAT
  */
 export const DEFAULT_EXCLUDED_TITLES: string[] = ['공동체 고백송', '예배 전 준비 찬양'];
 
+/**
+ * 공동체 고백송으로 부르는 곡. 그 곡의 가사 슬라이드는 **고정된 back-slides 안에**
+ * 있으므로, 생성기가 그 블록을 이 곡으로 고쳐 쓴다 — 그리고 콘티에서 이 곡을
+ * 「슬라이드를 만들어야 하는 곡」에서 갈라내는 것도 같은 값이다.
+ * 기본값은 번들된 back 덱이 이미 찍어 두고 있는 곡이다.
+ */
+export const DEFAULT_CONFESSION_SONG = 'Celebrate the Light';
+
 /** The part of the settings shared across every device via the proxy. */
 export interface SharedRecognitionSettings {
   attempts: RecognitionAttempt[];
   excludedTitles: string[];
+  /**
+   * 이번 시즌의 공동체 고백송 제목. 곡 라이브러리에서 찾아 back 덱의 공동체 고백
+   * 블록을 고쳐 쓴다. **빈 문자열은 "back slides를 받은 그대로 둔다"**는 뜻이다.
+   */
+  confessionSong: string;
   /**
    * Roles the administrator pinned by hand, keyed by `engine:model`.
    *
@@ -163,6 +176,7 @@ export interface SharedRecognitionSettings {
 export const DEFAULT_SHARED_SETTINGS: SharedRecognitionSettings = {
   attempts: [...DEFAULT_ATTEMPT_ORDER],
   excludedTitles: [...DEFAULT_EXCLUDED_TITLES],
+  confessionSong: DEFAULT_CONFESSION_SONG,
   roleOverrides: {},
 };
 
@@ -186,6 +200,7 @@ export const DEFAULT_GEMINI_MODEL = 'gemini-3.6-flash';
 export const DEFAULT_AI_SETTINGS: AiSettings = {
   attempts: [...DEFAULT_ATTEMPT_ORDER],
   excludedTitles: [...DEFAULT_EXCLUDED_TITLES],
+  confessionSong: DEFAULT_CONFESSION_SONG,
   roleOverrides: {},
   geminiModel: DEFAULT_GEMINI_MODEL,
   geminiUseSearch: true,
@@ -269,6 +284,16 @@ export function sanitizeExcludedTitles(raw: unknown): string[] {
 }
 
 /**
+ * 저장되거나 받아 온 공동체 고백송 제목을 다듬는다. 문자열이 아니면 기본값(번들된
+ * back 덱이 찍는 곡)으로 떨어지고, **비워 둔 것은 그대로 남긴다** — 그것이
+ * "back slides를 건드리지 않는다"는 뜻이기 때문이다.
+ */
+export function sanitizeConfessionSong(raw: unknown): string {
+  if (typeof raw !== 'string') return DEFAULT_CONFESSION_SONG;
+  return raw.trim().slice(0, 100);
+}
+
+/**
  * Keep only overrides that name a catalog model and a real role. An override
  * for a model this build no longer ships would otherwise sit in shared
  * settings forever, invisible and unexplained.
@@ -290,6 +315,7 @@ export function sanitizeSharedSettings(raw: unknown): SharedRecognitionSettings 
   return {
     attempts: sanitizeAttemptOrder(obj.attempts),
     excludedTitles: sanitizeExcludedTitles(obj.excludedTitles),
+    confessionSong: sanitizeConfessionSong(obj.confessionSong),
     roleOverrides: sanitizeRoleOverrides(obj.roleOverrides),
   };
 }

@@ -3,16 +3,31 @@
 찬양, 성경 말씀, 설교, 광고, 추가 자료를 **6단계 화면**에서 `다음`/이전 버튼으로 입력하면
 **하나의 예배 슬라이드 PPTX**로 합쳐서 만들어 주는 웹 앱입니다.
 
-배포 주소: <https://shrlak.github.io/ppt/>
+예배 종류마다 준비 방식이 달라 생성기도 **두 개**입니다.
+
+| | 주일예배 | 수요예배 |
+|---|---|---|
+| 주소 | <https://shrlak.github.io/ppt/> | <https://shrlak.github.io/ppt/wednesday.html> |
+| 찬양 | 콘티 PDF를 올리면 가사를 읽어 슬라이드를 **만듭니다** | 곡 PPT나 **악보 사진**을 받아 그대로 넣습니다 |
+| 입력 | 콘티에서 날짜·본문·설교 제목을 자동 인식 | 날짜·설교 제목·설교자·본문 범위를 **직접 입력** |
+| 설교 | 설교 PPT를 올리면 본문 뒤에 삽입 | 앱은 '설교' 구분 장까지만 — 설교 PPT는 **나중에 직접** |
+| 파일명 | 그 주 **일요일** `MMDD.pptx` | 그 주 **수요일** `MMDD.pptx` |
+
+헤더의 **수요예배**/**주일예배 생성기** 버튼으로 두 화면을 오갈 수 있습니다. 아래 설명은
+따로 표시하지 않는 한 주일예배 생성기 기준입니다 (수요예배는 [🌙 수요예배](#-수요예배) 참고).
 
 ## 생성되는 슬라이드 순서
 
 ```
-Front slides  →  찬양  →  기도  →  성경 말씀  →  설교  →  기도  →  광고  →  Back/End  →  추가 자료
+Front slides  →  찬양  →  기도  →  성경 말씀  →  설교  →  기도  →  설교 후 찬양  →  기도  →  광고  →  Back/End  →  추가 자료
 ```
 
 Front 4장과 Back 21장은 각각 `public/front-slides.pptx`, `public/back-slides.pptx`에서 항상
-포함합니다. 기도(×2)와 광고 서식은 `public/service-template.pptx`에서 가져오며, 나머지 입력을
+포함합니다. **설교 후 찬양**으로 지정한 곡만 찬양 자리 대신 설교 뒤 기도 슬라이드 다음으로
+들어가고, 그 뒤에 기도 슬라이드가 한 장 더 붙습니다 (지정한 곡이 없으면 이 찬양과 기도를 함께
+건너뛰므로 기도 슬라이드가 연달아 나오지 않습니다). Back slides의 **공동체 고백** 슬라이드는
+관리자 설정에서 정한 고백송으로 자동으로 바뀝니다. 기도와 광고 서식은
+`public/service-template.pptx`에서 가져오며, 나머지 입력을
 고정 순서에 맞춰 하나의 `.pptx`로 내려받습니다. 추가 자료가 있으면 Back/End의 마지막 장 뒤에
 사용자가 정한 순서대로 이어집니다. 다운로드 파일명은 콘티 날짜가 속한
 주의 일요일을 기준으로 `MMDD.pptx`(예: `0712.pptx`)로 자동 생성됩니다.
@@ -21,7 +36,7 @@ Front 4장과 Back 21장은 각각 `public/front-slides.pptx`, `public/back-slid
 
 헤더의 **편집기 보기** 버튼을 누르면 단계별 화면 대신 PowerPoint 편집기 같은 화면으로
 전환됩니다. 왼쪽에 최종 PPT의 전체 슬라이드 목록(Front → 찬양 → 기도 → 성경 말씀 → 설교 →
-기도 → 광고 → Back/End → 추가 자료)이 순서대로 나열되고, 오른쪽에는 모든 입력 편집기가 함께
+기도 → 설교 후 찬양 → 기도 → 광고 → Back/End → 추가 자료)이 순서대로 나열되고, 오른쪽에는 모든 입력 편집기가 함께
 표시됩니다. 찬양이나 광고 슬라이드를 왼쪽에서 클릭하면 오른쪽 편집 화면이 그 위치로
 이동합니다. 같은 데이터를 보여주는 것이라 **단계별 보기**로 다시 전환해도 입력한 내용은
 그대로 유지됩니다.
@@ -94,7 +109,7 @@ Front 4장과 Back 21장은 각각 `public/front-slides.pptx`, `public/back-slid
   있는 표지에서도 즉시 읽어옵니다.
 - **표지가 없어도 OK** — 표지를 인식하지 못한 콘티는 표지를 건너뛰고 **악보 페이지 순서 그대로** 곡을
   정리합니다. 각 악보 페이지가 한 곡이 되며(라이브러리에 있으면 제목·키를 자동으로 채움), 마지막
-  악보는 공동체 고백송으로 제외합니다.
+  악보는 공동체 고백송이면 제외합니다.
 - **제목이 라이브러리에 있으면 가사 인식을 건너뜁니다** — 콘티가 들어오면 악보에서 **제목만** 먼저
   읽습니다. 그 제목이 라이브러리에 **완전히 같은 제목으로**(띄어쓰기·대소문자·문장부호만 무시)
   저장되어 있으면 **가사 인식을 거기서 멈추고** 저장된 가사를 바로 불러옵니다. 라이브러리에 없는
@@ -239,8 +254,17 @@ Front 4장과 Back 21장은 각각 `public/front-slides.pptx`, `public/back-slid
 - **AI 사용량 페이지** — 헤더의 **사용량** 버튼(관리자 버튼 옆)을 누르면 공유 프록시를 통해 사용한
   Gemini·OpenRouter의 모델별 무료 한도 사용량을 막대로 확인할 수 있습니다.
   Gemini와 OpenRouter는 일일 요청 수와 실제 응답 토큰을 무료 한도 대비 막대로 표시합니다.
-- **공동체 고백송 제외** — 콘티의 마지막 찬양은 공동체 고백송으로 간주해 일반 찬양 가사
-  슬라이드에서는 제외합니다. 해당 순서는 고정 Back slides에 포함됩니다.
+- **공동체 고백송 (관리자 설정)** — 공동체 고백송은 Back slides가 직접 가지고 있으므로 일반 찬양
+  가사 슬라이드에서는 제외합니다. 어떤 곡인지는 **관리자 설정 → 공동체 고백송**에서 정하며,
+  Back slides에서 **공동체 고백**이라고 적힌 슬라이드와 그 뒤의 가사 슬라이드가 그 곡으로
+  자동으로 바뀝니다 (제목 표기는 그대로 두고 곡 이름만 바꿉니다). 가사는 곡 라이브러리에서
+  가져오므로, 새 고백송은 찬양 단계에서 한 번 저장해 두면 됩니다. 라이브러리에 가사가 없거나
+  Back slides가 이미 그 곡을 담고 있으면 Back slides를 그대로 사용합니다. 기본값은 기본 Back
+  slides에 들어 있는 `Celebrate the Light`입니다.
+- **설교 후 찬양** — 콘티에서 공동체 고백송 **다음에** 적힌 찬양은 설교 후 찬양으로 보고, 슬라이드를
+  맨 앞 찬양 자리가 아니라 **설교 뒤 기도 슬라이드 다음**에 넣고, 그 뒤에 광고 앞 기도 슬라이드를
+  한 장 더 넣습니다. 설교 후 찬양으로 지정한 곡이 없는 주에는 이 찬양과 기도를 함께 건너뜁니다.
+  찬양 단계의 각 곡 카드에 있는 **설교 후 찬양** 버튼으로 언제든지 지정하거나 해제할 수 있습니다.
 - **제외 곡 목록 (관리자 설정)** — 인식된 곡 제목이 관리자 설정의 **제외 곡 목록**(기본:
   공동체 고백송, 예배 전 준비 찬양)과 일치하면 찬양 편집에 표시하지 않습니다. 목록은 공유
   서버에 저장되어 모든 기기에 적용됩니다.
@@ -308,6 +332,87 @@ Front 4장과 Back 21장은 각각 `public/front-slides.pptx`, `public/back-slid
 - PPTX는 원본 슬라이드·레이아웃·테마를 유지한 채 전체가 삽입됩니다.
 - 저장된 PPT를 라이브러리에서 다시 편집하면 파일 이름, 원본 데이터, 순서가 함께 복원됩니다.
 
+## 🌙 수요예배
+
+수요예배는 주일예배와 만드는 방식이 완전히 달라 **별도 페이지**(`/ppt/wednesday.html`)에서
+만듭니다. 콘티가 없고, 찬양 슬라이드는 각 곡의 PPT 파일에서 **악보·가사 장을 그대로 가져오며**,
+설교 슬라이드는 앱이 넣지 않습니다.
+
+### 생성되는 슬라이드 순서
+
+```
+표지  →  수요예배  →  경배와 찬양  →  [찬양 제목 + 그 곡 PPT 전체] × N  →  기도
+      →  말씀  →  말씀 본문 × N  →  설교  →  기도  →  합심기도  →  마지막 장
+```
+
+**설교 슬라이드는 '설교' 구분 장 뒤에 직접 넣으세요.** 앱은 거기까지만 만듭니다.
+고정 슬라이드 11종은 모두 `public/wednesday-template.pptx`에서 가져옵니다 — 실제 수요예배 PPT에서
+그 주의 문구만 `{{...}}` 자리표시자로 바꾼 파일이라, 표지 배경·글꼴·배치가 원본 그대로입니다.
+
+### 1단계 · 예배 정보
+
+날짜, 설교 제목, 설교자 성함과 직분, 성경 본문 **범위**만 입력하면 됩니다.
+
+- **본문은 범위만** — `시18:1-12`처럼 짧게 적어도 되고, `시편 18편 1-12절`처럼 적어도 됩니다.
+  본문은 주일예배와 같은 **개역개정**에서 자동으로 채웁니다. 입력하는 동안 아래에
+  `시편 18편 1-12절 · 12절 · 말씀 슬라이드 4장`처럼 결과를 미리 보여 줍니다.
+- **한 장에 넣을 절 수**는 기본 3절입니다. 절이 길면 글자 크기를 자동으로 줄여 상자 안에 맞춥니다.
+- **파일명은 그 주 수요일** 날짜로 `MMDD.pptx`(예: `0916.pptx`)가 자동으로 정해집니다. 직접 고쳐도
+  됩니다.
+
+### 2단계 · 찬양
+
+**곡 제목만 적으면 됩니다.** 제목을 입력하면 앱이 알아서 인터넷을 찾아 그 곡의 자료를 받아
+붙입니다. 붙는 것은 둘 중 하나입니다.
+
+- **찬양 PPT** — 그 파일의 **모든 슬라이드가** 찬양 제목 장 뒤에 순서대로 들어갑니다.
+- **악보 사진** — 사진 **한 장이 슬라이드 한 장**이 됩니다. 사진은 비율을 그대로 유지한 채 슬라이드
+  가운데에 맞춰 들어갑니다.
+
+찬양 PPT가 확실히 그 곡으로 확인되면 그것을 쓰고, 없으면 악보 사진을 받아 붙입니다(보통 1~2장).
+확실한 결과가 없을 때는 **마음대로 고르지 않고** 찾은 것을 보여 주니 맞는 것을 고르시면 됩니다.
+첫 번째 결과에 파일이 없으면 그다음 것을 눌러 보는 식으로 최대 세 개까지 시도합니다.
+
+- **직접 올리기도 됩니다** — `PPT·악보 사진 올리기` 버튼으로 `.pptx`나 사진(PNG·JPG)을 여러 장
+  한꺼번에 올릴 수 있습니다. **로그인이 필요한 네이버 카페처럼 자동으로 받을 수 없는 곳, 직접 찍은
+  악보 사진**은 이 방법으로 넣으세요. 언제나 동작하는 경로라 항상 함께 있습니다.
+- **사진은 한 장씩 빼고 더할 수 있습니다** — 붙은 악보 사진이 미리보기로 나오고, 필요 없는 장은
+  ✕로 지우고, 검색이 찾아 둔 나머지 장은 한 번 눌러 추가할 수 있습니다.
+- **다시 찾기** 버튼으로 같은 곡을 다시 찾아볼 수 있습니다.
+
+곡은 위·아래 버튼으로 순서를 바꾸고, 필요하면 지울 수 있습니다. 자료를 아직 못 구한 곡도 제목만
+적어 두면 **찬양 제목 장**은 만들어집니다.
+
+> 브라우저는 다른 사이트의 파일을 직접 받을 수 없어(CORS) Worker가 대신 받아 옵니다. 곡 자료는
+> 사이트를 가리지 않고 받되 **받아온 내용으로** 거릅니다 — 찬양 PPT는 진짜 PowerPoint 파일인지와
+> 크기(25MB), 악보 사진은 PNG·JPG가 맞는지와 크기(8MB)를 확인합니다. 곡 하나가 네이버 블로그,
+> 갓피플, 티스토리 중 어디에 있을지는 그때그때 다르고, 목록으로 막으면 대부분이 "직접 올려
+> 주세요"가 되기 때문입니다. **네이버 블로그·카페·갓피플·티스토리**는 아는 자료실로 등록되어 있어
+> 검색 결과에서 먼저 시도하고(`WEDNESDAY_PPT_HOSTS`로 추가), 스트리밍·영상 사이트는 파일이 있을 수
+> 없으니 아예 받으러 가지 않습니다. 사이트를 목록으로만 제한하려면 `WEDNESDAY_PPT_HOSTS_ONLY=true`
+> (악보 사진은 `WEDNESDAY_IMAGE_HOSTS_ONLY=true`).
+
+- **슬라이드 크기가 다르면 자동으로 맞춥니다** — 내려받은 곡 PPT가 수요예배 PPT와 크기가 다르면
+  비율을 유지한 채 가운데로 맞추고, 다운로드 화면에 그 사실을 알려 줍니다.
+- **곡 안의 이동 버튼이 그대로 동작합니다** — 찬양 PPT 아래쪽의 `1절`·`2절` 같은 버튼(슬라이드
+  바로가기)은 합쳐진 뒤에도 자기 곡의 슬라이드를 가리킵니다.
+
+### 수요예배 찬양 라이브러리
+
+쓴 곡은 **제목과 그 자료를 받은 주소**만 라이브러리에 남습니다 (파일과 사진은 보관하지 않습니다).
+다음 주에 같은 곡을 쓸 때 목록에서 고르면 저장된 주소에서 바로 다시 받아오고, 자동으로 받을 수 없는
+주소면 **출처 열기** 링크로 직접 내려받아 올리면 됩니다. 이 목록은 공유 서버에 저장되어 다른
+기기에서도 같게 보이며, 주일 오후 5시 자동 삭제 대상이 **아닙니다**.
+
+### 3단계 · 다운로드와 자동 저장
+
+- **수요예배 PPT**와 **썸네일**(16:9 한 장짜리 `0916 썸네일.pptx`)을 각각 내려받습니다. 썸네일은
+  표지와 같은 내용이며, 원본 썸네일 파일과 같은 레이아웃을 그대로 씁니다.
+- 만들어진 슬라이드 목록을 순서대로 보여 주므로, 설교 슬라이드를 넣을 자리를 바로 확인할 수 있습니다.
+- **자동 저장** — 입력한 내용은 이 브라우저(새로고침해도 유지, 올린 곡 파일 포함)와 공유 PPT
+  라이브러리 양쪽에 자동으로 저장됩니다. 라이브러리에서 수요예배 항목의 **편집**을 누르면 이
+  페이지가 열리면서 그 주의 입력과 곡 파일이 함께 복원됩니다.
+
 ## 로컬 개발
 
 ```bash
@@ -339,11 +444,19 @@ GitHub Actions로 GitHub Pages에 자동 배포됩니다.
 
 - 기도·광고 제목·광고 항목 서식: `public/service-template.pptx`
 - 필수 Front slides: `public/front-slides.pptx`
-- 필수 Back slides: `public/back-slides.pptx`
+- 필수 Back slides: `public/back-slides.pptx` (공동체 고백 슬라이드는
+  `src/lib/pptx/confessionSlides.ts`가 관리자 설정의 고백송으로 바꿔 씁니다 — 슬라이드 번호가
+  아니라 '공동체 고백'이라는 글자와 그 아래 곡 이름으로 찾으므로, 다른 Back slides로 교체해도
+  같은 형식이면 그대로 동작합니다)
 - 찬양 슬라이드 템플릿: `public/template.pptx` (교체 가능)
 - 기본 곡 라이브러리: `public/library.json` (교체 가능)
 - 성경 슬라이드 템플릿: `public/bible-template.pptx` (교체 가능, 앱에서 세션별 업로드도 지원)
 - 성경 본문 데이터: `public/bible-text/*.json` (번역본별 전체 본문, 실제 사용 시에만 지연 로드)
+- 수요예배 고정 슬라이드: `public/wednesday-template.pptx` (11장), 썸네일:
+  `public/wednesday-thumbnail.pptx` (16:9 한 장). 실제 수요예배 PPT에서
+  `scripts/prepare-wednesday-template.mjs`가 뽑아낸 파일로, 그 주의 문구를 `{{...}}`로 바꾸고
+  쓰이지 않는 파트(그 주의 악보 이미지 등)를 모두 지웁니다. 교회 디자인이 바뀌면 새 PPT로 같은
+  스크립트를 다시 돌리면 됩니다 (원본 예배 파일은 저장소에 두지 않습니다).
 - 서로 다른 템플릿에서 생성된 슬라이드 묶음은 `src/lib/pptxMerge.ts`가 하나의 파일로 합칩니다
   (레이아웃·마스터·테마·이미지가 겹치지 않도록 이름을 바꿔 복사합니다).
 - `src/lib/pptxPackage.ts`는 노트/댓글 관계를 함께 정리하고, 다운로드 직전에 모든 내부 관계와
@@ -351,6 +464,14 @@ GitHub Actions로 GitHub Pages에 자동 배포됩니다.
 - Back deck 원본은 저장소의 파일 크기 전송 제약을 피하기 위해 `assets/pptx/back-slides/*.b64`에
   분할 보관하며, `scripts/assemble-pptx-assets.mjs`가 개발·테스트·빌드 전에 체크섬을 확인해
   `public/back-slides.pptx`로 자동 복원합니다.
+- 수요예배 페이지는 Vite의 두 번째 진입점입니다: `wednesday.html` + `src/wednesday/` (빌드 설정은
+  `vite.config.ts`의 `build.rollupOptions.input`). 찬양 PPT·악보 사진 검색과 중계, 곡 라이브러리는
+  Worker의 `/wednesday/songs`, `/wednesday/songs/sheets`, `/libraries/wednesday-songs` 경로가
+  담당합니다 — `worker/README.md` 참고.
+- 악보 사진 슬라이드는 `src/lib/pptx/imageDeckBuilder.ts`가 만듭니다. 슬라이드 크기와 바탕이 될
+  템플릿 장을 옵션으로 받아 수요예배 캔버스에 맞추고, 만든 덱은
+  `pptxPackage.ts`의 `pruneToSlides()`로 **자기 슬라이드가 쓰지 않는 파트를 모두 덜어낸 뒤** 합쳐집니다
+  (그러지 않으면 곡마다 템플릿 배경 2MB가 한 벌씩 복사됩니다).
 - 데스크톱 앱(별도 프로젝트): `desktop/` — Tauri 기반 예배 셋리스트 관리 앱, 자세한 내용은
   `desktop/README.md` 참고
 
@@ -360,16 +481,21 @@ GitHub Actions로 GitHub Pages에 자동 배포됩니다.
 
 **KCCP PPT Generator** is a six-step wizard that combines five input types into one downloaded
 `.pptx`, in this fixed order: **front slides → praise (찬양) → prayer → scripture (말씀) →
-sermon (설교) → prayer → announcements (광고) → back/end slides → additional files**. The
-supplied front and back decks
+sermon (설교) → prayer → post-sermon praise (설교 후 찬양) → prayer → announcements (광고) →
+back/end slides → additional files**. A week with no post-sermon praise skips that song and the
+prayer slide after it together. The supplied front and back decks
 are mandatory; the prayer and announcement layouts come from `public/service-template.pptx`. The
 download filename is generated automatically from that week's Sunday in `MMDD.pptx` format.
 
 1. **Praise lyrics** — a praise set-list (콘티) PDF becomes per-section lyric slides. Auto-detects
    date, sermon title, song list, and keys from the cover — every page before the sheet music
    starts, however many that is — reuses a saved song's lyrics once the page is shown to carry the
-   same ones, excludes the final community-confession song, and supports section tokens
-   (V/PC/C/B/I) — each part renders once, in its first-appearance order.
+   same ones, excludes the community-confession song (the back deck already carries it), and
+   supports section tokens (V/PC/C/B/I) — each part renders once, in its first-appearance order.
+   The song listed after the confession song is treated as the post-sermon praise and is placed
+   after the sermon's prayer slide instead; any song can be moved there by hand from its card.
+   Which song is the community confession song is an administrator setting, and the back deck's
+   "공동체 고백" slides are rewritten to it from the song library.
 2. **Scripture** (ported from
    [edcho1012/kccp-bible-slide](https://github.com/edcho1012/kccp-bible-slide)) — free-text verse
    references (`행1:8-10 요3:16`) become verse slides in up to two translations. The conti's
@@ -383,6 +509,21 @@ download filename is generated automatically from that week's Sunday in `MMDD.pp
    final back/end slide. PDFs become one slide per page, images are fitted without cropping, and
    uploaded PPTX slides keep their own layouts and themes.
 
+**수요예배 (Wednesday service)** is prepared differently enough to get its own page at
+`/ppt/wednesday.html`: there is no 콘티 to read, each song's slides are the 악보 pages of that
+song's own downloaded `.pptx` spliced in whole, and the sermon slides are inserted by hand after
+the deck is made. The operator types the date, sermon title, preacher and a scripture range; the
+verses come from the same 개역개정 text, the file is named after that week's Wednesday
+(`MMDD.pptx`), and a one-slide 16:9 썸네일 is downloaded beside it. Typing a song's title is the whole
+interaction: the app searches, downloads and attaches what it is confident about by itself — the
+song's own 찬양 PPT when one is found, otherwise its 악보 사진, one slide per page, centred on the
+deck's canvas. A browser cannot fetch a cross-origin file, so the proxy does it
+(`GET /wednesday/songs` and `/wednesday/songs/sheets` search; `POST /wednesday/songs/file` and
+`/wednesday/songs/image` relay). Nothing is guessed at: an uncertain search shows what it found
+instead of attaching it, and `.pptx` files or photos can always be uploaded by hand — the only way
+to use a source behind a login, or a sheet photographed on a phone. The 수요예배 song library keeps
+titles and source links only, never files.
+
 Generated decks are archived in a shared PPT library backed by a Cloudflare Worker, together with
 every file that produced them (conti PDF, sermon PPTX, ordered additional-file originals, and a
 snapshot of the wizard inputs), and
@@ -390,8 +531,8 @@ auto-save keeps that server copy current while you edit. The server side of that
 every **Sunday at 5 PM US Eastern** so each week starts from an empty shelf — download anything you
 want to keep before then. The song-lyrics library is never purged.
 
-Slide generation itself runs client-side — Vite + React + TypeScript, deployed to GitHub Pages via
-GitHub Actions (set repo Settings → Pages → Source to "GitHub Actions"). `src/lib/pptxMerge.ts`
+Slide generation itself runs client-side — Vite + React + TypeScript, two pages
+(`index.html`, `wednesday.html`), deployed to GitHub Pages via GitHub Actions (set repo Settings → Pages → Source to "GitHub Actions"). `src/lib/pptxMerge.ts`
 stitches decks built from different templates into one file by renaming any colliding layout/
 master/theme/media parts. Local dev: `npm install && npm run dev`; e2e tests:
 `npm run build && CHROMIUM_PATH=/opt/pw-browsers/chromium npm run test:e2e`.

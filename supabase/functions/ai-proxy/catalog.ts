@@ -59,6 +59,18 @@ export const RECOGNITION_MODEL_CATALOG: readonly CatalogEntry[] = [
 
 export const DEFAULT_EXCLUDED_TITLES = ["공동체 고백송", "예배 전 준비 찬양"];
 
+/**
+ * 공동체 고백송으로 부르는 곡. 그 가사 슬라이드는 고정된 back-slides 안에 있으므로,
+ * 조립기가 그 블록을 이 곡으로 고쳐 쓴다. 기본값은 번들된 back 덱이 이미 찍는 곡이다.
+ * **빈 문자열은 "back slides를 받은 그대로 둔다"**는 뜻이라 그대로 남긴다.
+ */
+export const DEFAULT_CONFESSION_SONG = "Celebrate the Light";
+
+export function sanitizeConfessionSong(raw: unknown): string {
+  if (typeof raw !== "string") return DEFAULT_CONFESSION_SONG;
+  return raw.trim().slice(0, 100);
+}
+
 function attemptKey(a: { engine: Engine; model: string }): string {
   return `${a.engine}:${a.model}`;
 }
@@ -145,6 +157,7 @@ export function sanitizeRoleOverrides(raw: unknown): Record<string, ModelRole> {
 export interface SharedSettings {
   attempts: Attempt[];
   excludedTitles: string[];
+  confessionSong: string;
   roleOverrides: Record<string, ModelRole>;
 }
 
@@ -153,6 +166,7 @@ export function sanitizeSharedSettings(raw: unknown): SharedSettings {
   return {
     attempts: sanitizeAttemptOrder(obj.attempts),
     excludedTitles: sanitizeExcludedTitles(obj.excludedTitles),
+    confessionSong: sanitizeConfessionSong(obj.confessionSong),
     roleOverrides: sanitizeRoleOverrides(obj.roleOverrides),
   };
 }
