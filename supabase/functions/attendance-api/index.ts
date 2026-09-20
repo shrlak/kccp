@@ -7,6 +7,7 @@ import { csvUrl, matchPerson, mergeSheetMarks, nameCounts, normalizeMarks, parse
 import { findLink, findLinkFor, newLinkToken, parseLinks, recentSundays, reconcileTermLinks, type DongsanLink } from "./dongsanLink.ts";
 import { deleteMembersKeepingAttendance } from "./memberDelete.ts";
 import { canTouchService, CONTI_BUCKET, DECK_BUCKET, isIsoDate, keyBelongsTo, objectKey, SIGNED_UPLOAD_TTL_SECONDS, SIGNED_URL_TTL_SECONDS, type SlidePartition } from "./slides.ts";
+import { canTouchSetlist, canUploadTo, deckFileName, defaultService, leaderServices, upcomingSunday } from "./praise.ts";
 // Decrypt-side of the weekly R2 backup pipeline (see scripts/backup/). age-encryption is
 // FiloSottile's own pure-JS port of `age` (no native/subprocess dependency, which Deno
 // edge functions can't shell out to anyway); postgres.js's .unsafe() with no parameters
@@ -1108,7 +1109,10 @@ Deno.serve(async (req: Request) => {
       // 부서 list, the 새가족 교육 tab's visibility, and which config block it reads.
       // canChoosePartition: 이 로그인은 두 부를 다 볼 수 있다 → 패널이 "어느 부로" 화면을
       // 띄우고, 고른 값을 X-Partition으로 실어 보낸다.
-      return ok({role:role.role,group:role.group,subgroup:role.subgroup,ministry:role.ministry,partition:role.partition,areas:role.areas,canViewLoginLog:canViewLoginLog(role),canChoosePartition:canChoosePartition(role)});
+      // team: 찬양팀 인도자가 이끄는 팀. 화면은 이것으로 「어느 팀의 콘티를 올리는가」를
+      // **묻지 않는다** — 묻지 않는 것이 이 기능의 요점이다. 없으면(보통 없다) 그 영역도
+      // 없거나, 소유자라 팀을 고를 자리가 뜬다.
+      return ok({role:role.role,group:role.group,subgroup:role.subgroup,ministry:role.ministry,partition:role.partition,areas:role.areas,team:role.team??null,canViewLoginLog:canViewLoginLog(role),canChoosePartition:canChoosePartition(role)});
     }
 
     // Scoped roster (replaces the world-readable /api/data for staff): super/pastor → their
@@ -2792,6 +2796,129 @@ Deno.serve(async (req: Request) => {
         .eq("id",row.id);
       if(error) return fail(500,error.message);
       return ok({id:row.id,archived:!restore});
+    }
+
+
+    // ── 찬양팀 인도자: 자기 팀의 콘티 ────────────────────────────────────────────────
+    // 경로가 /api/praise/ 아래라 areaOf()가 'praise' 영역을 요구한다. 그 영역을 주는 것은
+    // `team_leaders` 의 줄 하나뿐이고(`praiseTeamOf`), 비밀번호로는 열리지 않는다.
+    //
+    // **슬라이드 영역과 다른 점은 범위다.** 미디어팀은 자기 부(部)의 예배를 전부 보지만
+    // 인도자는 **자기 팀**만 본다 — 팀 id는 자격(`role.team`)에서 오고, 요청 본문에서는
+    // 오지 않는다. 보낼 수 있으면 그것이 곧 남의 팀 콘티를 덮어쓰는 길이다.
+
+    // 나는 누구이고 어디에 올리는가. 화면이 처음 묻는 한 가지다.
+    if(req.method==="GET"&&p==="/api/praise/me") {
+      const role=await auth(); if(!role) return fail(401,"Unauthorized");
+      const team=role.team??null;
+      const {data:services}=await sb.from("services").select("*").eq("active",true).order("sort_order");
+      // 팀이 없는 자격은 소유자뿐이다 (auth.ts). 그 화면은 팀을 **묻는다** — 자격에 없는
+      // 팀을 자격이 지어내지 않는다.
+      const teamless=!team;
+      const {data:links}=await sb.from("team_services").select("*");
+      const mine=team?leaderServices((services||[]) as any,(links||[]) as any,team.id):[];
+      let teams:any[]=[];
+      if(teamless){
+        const {data:all}=await sb.from("teams").select("id,name,kind,partition").eq("active",true);
+        teams=(all||[]).map((t:any)=>({id:t.id,name:t.name,kind:t.kind,partition:t.partition}));
+      }
+      return ok({
+        team, teams, services:mine,
+        defaultServiceId:defaultService(mine)?.id??null,
+        // 콘티가 향하는 주일. 서버가 정한다 — 화면의 시계는 폰의 시계이고, 그 시계는
+        // 비행기에서 돌아온 사람의 것일 수 있다.
+        serviceDate:upcomingSunday(localDate()),
+        leader:{email:role.email??"",name:""},
+      });
+    }
+
+    // 이 팀의 콘티들. 부(部)가 아니라 팀으로 좁힌다.
+    if(req.method==="GET"&&p==="/api/praise/setlists") {
+      const role=await auth(); if(!role) return fail(401,"Unauthorized");
+      if(!role.team&&role.role!=="owner") return fail(403,"Forbidden");
+      let q=sb.from("setlists").select("*").order("service_date",{ascending:false}).limit(50);
+      if(role.team) q=q.eq("team_id",role.team.id);
+      const {data:rows,error}=await q; if(error) return fail(500,error.message);
+      const {data:services}=await sb.from("services").select("id,name,partition");
+      const byService=new Map((services||[]).map((sv:any)=>[sv.id,sv]));
+      return ok({setlists:(rows||[]).map((row:any)=>({
+        id:row.id,teamId:row.team_id,serviceId:row.service_id,serviceDate:row.service_date,
+        serviceName:byService.get(row.service_id)?.name??"",
+        partition:byService.get(row.service_id)?.partition??"youth",
+        hasConti:!!row.conti_path,hasDeck:!!row.deck_path,archivedAt:row.archived_at,
+        uploadedByEmail:row.uploaded_by_email??null,uploadedByName:row.uploaded_by_name??null,
+      }))});
+    }
+
+    // 콘티 자리를 잡고 업로드 URL을 받는다. **팀은 자격에서 온다.**
+    if(req.method==="POST"&&p==="/api/praise/conti") {
+      const role=await auth(); if(!role) return fail(401,"Unauthorized");
+      const {serviceId,serviceDate,fileName,teamId}=body||{};
+      // 소유자만 팀을 고를 수 있다 (팀이 없으므로). 인도자가 보낸 teamId는 무시한다 —
+      // 거절이 아니라 무시인 이유는, 화면이 무엇을 보내든 자격이 답이기 때문이다.
+      const team=role.team??(role.role==="owner"&&teamId
+        ? await (async()=>{
+            const {data:t}=await sb.from("teams").select("id,name,kind,partition").eq("id",teamId).eq("active",true).maybeSingle();
+            return t?{id:t.id,name:t.name,kind:t.kind as "praise"|"choir",partition:t.partition as SlidePartition}:null;
+          })()
+        : null);
+      if(!team) return fail(403,"이 자격에는 찬양팀이 없습니다");
+      if(!serviceId) return fail(400,"serviceId is required");
+      const date=isIsoDate(serviceDate)?serviceDate:upcomingSunday(localDate());
+
+      const {data:sv}=await sb.from("services").select("id,partition").eq("id",serviceId).maybeSingle();
+      if(!sv) return fail(404,"service not found");
+      if(!canUploadTo(team,{partition:sv.partition as SlidePartition})) return fail(403,"Forbidden");
+      const {data:link}=await sb.from("team_services").select("team_id").eq("team_id",team.id).eq("service_id",serviceId).maybeSingle();
+      if(!link) return fail(400,"이 팀은 그 예배에 서지 않습니다");
+
+      // 같은 팀·예배·날짜면 **그 줄을 다시 쓴다.** 새 줄을 만들면 UNIQUE가 막고, 막힌
+      // 자리에서 사람은 날짜를 고쳐 넣는다 — 그러면 그 주의 콘티가 다른 날짜에 앉는다.
+      const {data:row,error}=await sb.from("setlists")
+        .upsert({team_id:team.id,service_id:serviceId,service_date:date,archived_at:null,
+                 uploaded_by_email:role.email??null,updated_at:new Date().toISOString()},
+                {onConflict:"team_id,service_id,service_date"})
+        .select().single();
+      if(error||!row) return fail(500,error?.message||"could not open the setlist");
+
+      const key=objectKey({serviceDate:date,setlistId:row.id,name:fileName||"conti.pdf"});
+      const {data:signed,error:sErr}=await sb.storage.from(CONTI_BUCKET).createSignedUploadUrl(key,{upsert:true});
+      if(sErr) return fail(500,sErr.message);
+      await sb.from("setlists").update({conti_path:key,updated_at:new Date().toISOString()}).eq("id",row.id);
+      return ok({setlistId:row.id,serviceDate:date,deckFileName:deckFileName(date),
+                 bucket:CONTI_BUCKET,path:key,uploadUrl:signed?.signedUrl,token:signed?.token,
+                 expiresIn:SIGNED_UPLOAD_TTL_SECONDS});
+    }
+
+    // 자기 팀 콘티·덱을 열어 보는 링크. 짧게 산다.
+    const praiseFile=p.match(/^\/api\/praise\/setlists\/([0-9a-fA-F-]{36})\/(conti|deck)$/);
+    if(req.method==="GET"&&praiseFile) {
+      const role=await auth(); if(!role) return fail(401,"Unauthorized");
+      const [,setlistId,kind]=praiseFile;
+      const {data:row}=await sb.from("setlists").select("*").eq("id",setlistId).maybeSingle();
+      if(!row) return fail(404,"Not found");
+      if(!canTouchSetlist(role,row as any)) return fail(403,"Forbidden");
+      const path=kind==="conti"?row.conti_path:row.deck_path;
+      if(!path) return fail(404,"아직 올라오지 않았습니다");
+      if(!keyBelongsTo(path,row.service_date,row.id)) return fail(409,"stored path does not belong to this setlist");
+      const bucket=kind==="conti"?CONTI_BUCKET:DECK_BUCKET;
+      const {data:signed,error}=await sb.storage.from(bucket).createSignedUrl(path,SIGNED_URL_TTL_SECONDS);
+      if(error) return fail(500,error.message);
+      return ok({url:signed?.signedUrl,expiresIn:SIGNED_URL_TTL_SECONDS});
+    }
+
+    // 자동으로 만들어진 덱을 그 주의 콘티 옆에 둔다. 미디어팀이 여기서 받는다.
+    const praiseDeck=p.match(/^\/api\/praise\/setlists\/([0-9a-fA-F-]{36})\/deck$/);
+    if(req.method==="POST"&&praiseDeck) {
+      const role=await auth(); if(!role) return fail(401,"Unauthorized");
+      const {data:row}=await sb.from("setlists").select("*").eq("id",praiseDeck[1]).maybeSingle();
+      if(!row) return fail(404,"Not found");
+      if(!canTouchSetlist(role,row as any)) return fail(403,"Forbidden");
+      const key=objectKey({serviceDate:row.service_date,setlistId:row.id,name:body?.fileName||deckFileName(row.service_date)});
+      const {data:signed,error}=await sb.storage.from(DECK_BUCKET).createSignedUploadUrl(key,{upsert:true});
+      if(error) return fail(500,error.message);
+      await sb.from("setlists").update({deck_path:key,updated_at:new Date().toISOString()}).eq("id",row.id);
+      return ok({bucket:DECK_BUCKET,path:key,uploadUrl:signed?.signedUrl,token:signed?.token,expiresIn:SIGNED_UPLOAD_TTL_SECONDS});
     }
 
     return fail(404,"Not found");

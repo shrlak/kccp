@@ -68,10 +68,10 @@ jobs:
       # index.ts 는 아직 타입이 깨끗하지 않다(합쳐 온 코드). 새로 쓰는 모듈만 검사해
       # 적어도 더 나빠지지는 않게 한다.
       - name: Typecheck (새 모듈)
-        run: deno check supabase/functions/ai-proxy/index.ts supabase/functions/attendance-api/slides.ts
+        run: deno check supabase/functions/ai-proxy/index.ts supabase/functions/attendance-api/slides.ts supabase/functions/attendance-api/praise.ts supabase/functions/attendance-api/auth.ts
 
       - name: Lint
-        run: deno lint supabase/functions/ai-proxy/ supabase/functions/attendance-api/slides.ts
+        run: deno lint supabase/functions/ai-proxy/ supabase/functions/attendance-api/slides.ts supabase/functions/attendance-api/praise.ts
 
   migrations:
     name: 마이그레이션 재생

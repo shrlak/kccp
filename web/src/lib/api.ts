@@ -160,15 +160,25 @@ export function configCalendar(cfg?: AppConfig | null): TermCalendar | undefined
 // combined break-glass role, kept for back-compat.
 export type AdminRole =
   | 'super_admin' | 'leader' | 'pastor' | 'welcoming' | 'staff'
-  // 합치면서 생긴 둘. 서버의 auth.ts와 짝을 맞춰 둔다 — 어긋나면 화면이 서버가
+  // 합치면서 생긴 셋. 서버의 auth.ts와 짝을 맞춰 둔다 — 어긋나면 화면이 서버가
   // 실제로 내려주는 역할을 모르는 채로 분기한다.
-  | 'media'   // 부서 미디어팀 역할 계정 — 슬라이드 영역만
-  | 'owner'   // 소유자 — 부와 영역의 경계를 넘는다
+  | 'media'          // 부서 미디어팀 역할 계정 — 슬라이드 영역만
+  | 'praise_leader'  // 찬양팀 인도자 — 자기 팀의 콘티만
+  | 'owner'          // 소유자 — 부와 영역의 경계를 넘는다
 
-// 합쳐진 앱의 영역. 'attend'는 지금까지의 관리자 패널이고, 'slides'는 ppt에서 들어온
-// 예배 슬라이드다. 어느 것을 가졌는지는 자격이 정한다 — 비밀번호는 언제나 출석뿐이고,
-// 슬라이드는 구글 계정으로만 열린다.
+// 합쳐진 앱의 영역. 'attend'는 지금까지의 관리자 패널, 'slides'는 ppt에서 들어온 예배
+// 슬라이드(미디어팀), 'praise'는 찬양팀 인도자가 콘티를 올리는 자리다. 어느 것을
+// 가졌는지는 자격이 정한다 — 비밀번호는 언제나 출석뿐이고, 나머지 둘은 구글 계정으로만
+// 열린다.
 export type Area = 'attend' | 'slides' | 'praise'
+
+/** 이 로그인이 이끄는 찬양팀. 서버의 `LeaderTeam` 미러다. */
+export interface LeaderTeam {
+  id: string
+  name: string
+  kind: 'praise' | 'choir'
+  partition: Partition
+}
 
 // 영역이 없는 응답(옛 엣지 함수)은 출석 하나로 읽는다. 새 화면이 옛 서버 앞에서
 // 빈 손이 되지 않도록.
@@ -199,6 +209,10 @@ export interface AdminIdentity {
   // 이 로그인은 두 부를 다 볼 수 있다 — 로그인 뒤 어느 부의 패널로 들어갈지 고르고, 패널
   // 안에서 언제든 건너갈 수 있다. 구글 로그인에만 붙는다 (auth.ts CROSS_PARTITION_EMAILS).
   canChoosePartition?: boolean
+  // 찬양팀 인도자가 이끄는 팀 (`team_leaders`). 찬양 화면이 「어느 팀인가」를 **묻지
+  // 않기 위한** 값이다 — 묻지 않는 것이 그 기능의 요점이다. 소유자는 영역은 있고 팀은
+  // 없어서 null 이 오고, 그때만 화면이 고르는 자리를 띄운다.
+  team?: LeaderTeam | null
 }
 
 // Precise sign-in coordinates from the browser's Geolocation API, attached to the login

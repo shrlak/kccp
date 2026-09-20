@@ -6,33 +6,12 @@
 // 아직 안 올라왔으면 그 자리에서 올린다.
 import { useEffect, useState } from 'react'
 import { loadConti, type ContiDocument } from '../lib/utils/contiPdf'
-import { splitLyricsAndConfessionSongs } from '../lib/utils/contiText'
-import type { ContiSongEntry } from '../lib/utils/types'
+import { songsFromConti } from '../lib/contiSongs'
 import { recognizeConti, type RecognitionStatus } from '../lib/recognizeConti'
 import { contiUrl, getServices, getSetlists, uploadConti, type Service, type Setlist } from '../lib/setlists'
 import type { Song } from '../lib/utils/types'
-import { emptySong, type Wizard } from '../useWizard'
+import type { Wizard } from '../useWizard'
 import { Button, Card, Field, FilePicker, Notice, TextArea, TextInput } from '../ui'
-
-/**
- * 콘티 표지에서 읽은 것을 그 주의 내용으로 옮긴다. 가사는 아직 비어 있다 — 제목·키와,
- * 그 곡의 악보가 몇 쪽인지(`pageIndex`)까지. 그 쪽 번호가 인식이 곡과 악보를 잇는
- * 유일한 끈이다.
- *
- * 표지의 곡 목록이 그대로 찬양 목록이 되지는 않는다. **공동체 고백송은 빠진다** — 그
- * 곡의 가사 슬라이드는 back 덱 안에 이미 있어서 여기서 또 만들면 같은 곡이 두 번
- * 나간다. 그리고 그 **바로 다음 곡이 설교 후 찬양**이라, 여는 찬양이 아니라 설교 뒤로
- * 가도록 표를 달아 둔다 (조립 순서는 `buildDeck`).
- */
-function songsFromConti(entries: ContiSongEntry[]): Song[] {
-  const { lyricsSongs, postSermonSong } = splitLyricsAndConfessionSongs(entries)
-  return lyricsSongs.map((entry) => ({
-    ...emptySong(entry.title),
-    key: entry.key,
-    pageIndex: entry.pageIndex,
-    ...(entry === postSermonSong ? { postSermon: true } : {}),
-  }))
-}
 
 export function PraiseStep({ wizard }: { wizard: Wizard }) {
   const { state, patch, songs } = wizard
