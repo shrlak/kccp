@@ -779,6 +779,16 @@ live** at https://shrlak.github.io/kccp/ (옛 주소 `/kccp-attendance/`는 죽�
   runner outages ("The job was not acquired by Runner of type hosted") once held back a
   frontend-only deploy that had no function work in it. `changes` failing still blocks Pages
   (unknown ⇒ unsafe). A `notify` job comments deploy-success on the PR.
+- **마이그레이션 번호는 prod의 `schema_migrations`와 1:1이어야 한다 — 파일 이름만 보고
+  고르면 충돌한다.** 합치기 쪽 마이그레이션 넷(20260820~23)이 실제로 그렇게 어긋났다:
+  같은 날짜 접두사를 출석 쪽 작업(`adult_new_family_spouse_members` · `new_member_since` ·
+  `new_member_since_row_creation` · `adult_blank_email_null`)이 이미 prod에서 쓰고 있었고,
+  **그 다섯은 이 저장소의 히스토리에 없다.** Supabase는 그 버전을 이미 적용된 것으로 보므로
+  저장소 파일은 **영원히 실행되지 않았다** — 엣지 함수는 배포되어 살아 있는데 그 코드가 읽는
+  표가 없는, 조용하고 고약한 상태다 (화면에서는 500으로만 보인다).
+  그래서 셋을 20260826~29로 다시 매기고 prod에 직접 적용한 뒤 `schema_migrations`에 같은
+  버전을 적어 두었다. **새 파일을 더하기 전에 `mcp__Supabase__list_migrations`로 prod가 이미
+  쓰고 있는 번호를 확인하라** — 로컬의 `ls supabase/migrations`만으로는 알 수 없다.
 - **Migrations: add a repo file in `supabase/migrations/` and merge** — since 2026-06-10 prod's
   `schema_migrations` was repaired to match the repo's date-prefix filenames 1:1, so the Supabase
   branching integration is functional again: merge to `main` auto-applies new migration files to
