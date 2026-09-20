@@ -52,3 +52,9 @@ describe('buildImageDeck', () => {
     await expect(buildImageDeck(template, [])).rejects.toThrow('이미지가 없습니다');
   });
 });
+
+// 수요예배 템플릿 위에서 그리는 경우는 **여기서 검사하지 않는다.** 그 생성기는 아직
+// vendor/ppt/ 에 있고, 그 3.4 MB짜리 템플릿을 web/public/slides/ 로 들이면 슬라이드를
+// 쓰지 않는 사람의 배포에까지 그 무게가 실린다. 그 검사는 그대로 upstream(그리고
+// vendor/ppt/tests/pptx/imageDeckBuilder.test.ts)에 있고, 수요예배가 이 앱으로 건너오는
+// 날 템플릿과 함께 따라온다. `canvas` 옵션 자체는 위의 containRect 검사가 덮는다.

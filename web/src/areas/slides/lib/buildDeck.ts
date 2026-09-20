@@ -6,14 +6,16 @@
 // 진짜 템플릿으로 진짜 덱을 만들어 볼 수 있고**, 그것이 이 이관의 안전장치다 — 두 곳에서
 // 같은 주를 만들어 열어 비교하는 기간 동안 이쪽이 무엇을 만들었는지 코드가 말해 준다.
 //
-// **순서가 곧 예배 순서다.** front → 찬양 → 기도 → 말씀 → 설교 → 기도 → 광고 → back →
-// 추가 자료. 이 순서를 바꾸는 것은 리팩터링이 아니라 예배를 바꾸는 일이다.
+// **순서가 곧 예배 순서다.** front → 찬양 → 기도 → 말씀 → 설교 → 기도 → 설교 후 찬양 →
+// 기도 → 광고 → back → 추가 자료. 이 순서를 바꾸는 것은 리팩터링이 아니라 예배를 바꾸는
+// 일이다.
 import { convertAdditionalFile } from './additionalFiles/convert'
 import type { AdditionalFile } from './additionalFiles/types'
 import { buildBiblePptx } from '../bible/pptxBuilder'
 import { loadTranslation } from '../bible/bibleData'
 import { normalizeContiScripture, parseVerseInput } from '../bible/refParser'
 import { buildVerseSlidePlan } from '../bible/versePlanner'
+import { applyConfessionSong } from './pptx/confessionSlides'
 import { inspectDeckBytes } from './pptx/deckInspect'
 import { buildPptx } from './pptx/pptxBuilder'
 import { mergePptxDecks } from './pptx/pptxMerge'
@@ -31,6 +33,10 @@ import type { Song } from './utils/types'
 export const SERVICE_SLIDES = {
   prayer1: [17],
   prayer2: [31],
+  // 설교 후 찬양과 광고 사이의 기도. 템플릿은 예배 순서의 기도마다 한 장을 싣는데 이
+  // 둘은 같은 장이라 번호가 같다 — 같은 값이 두 번 적힌 것이 아니라, **예배 순서에서
+  // 다른 자리**다.
+  prayer3: [31],
   announcementTitle: [32],
   announcementItemTemplate: 33,
 } as const
@@ -60,6 +66,18 @@ export interface DeckInput {
   /** 관리자가 갈아 끼운 front/back. 없으면 번들된 것을 쓴다. */
   customFront?: ArrayBuffer
   customBack?: ArrayBuffer
+  /**
+   * 이번 주의 공동체 고백송 — **가사까지** 담긴 곡이다.
+   *
+   * 그 곡의 가사 슬라이드는 back 덱 **안에** 있으므로, 이것이 오면 그 블록을 제자리에서
+   * 고쳐 쓴다 (덱을 쪼갰다 붙이지 않는다 — back 덱은 3 MB이고 대부분이 미디어라 그렇게
+   * 하면 마스터·레이아웃·미디어가 통째로 복제된다).
+   *
+   * 없으면 back 덱을 **받은 그대로** 둔다. 제목만 있고 가사가 없는 경우를 여기까지
+   * 들여보내지 않는 이유가 그것이다: 빈 곡으로 고쳐 쓰면 주일 아침에 빈 슬라이드가
+   * 나온다. 그 판단은 `lookupConfessionSong`이 부르는 쪽에서 한다.
+   */
+  confessionSong?: Song | null
 }
 
 export interface BuiltDeck {
@@ -116,11 +134,20 @@ export function hasAnyContent(input: DeckInput): boolean {
  * DEFLATE로 눌러 파일 크기를 줄인다 — 뒤에 추가 자료가 붙으면 그 마지막이 뒤로 밀린다.
  */
 export async function buildDeck(input: DeckInput, assets: SlideAssets): Promise<BuiltDeck> {
-  const [serviceTemplate, frontSlides, backSlides] = await Promise.all([
+  const [serviceTemplate, frontSlides, backSource] = await Promise.all([
     assets.load('service-template.pptx'),
     input.customFront ?? assets.load('front-slides.pptx'),
     input.customBack ?? assets.load('back-slides.pptx'),
   ])
+
+  // back 덱은 공동체 고백송을 **스스로 찍는다.** 이번 주의 곡으로 그 블록을 고쳐 써서,
+  // 누가 .pptx를 손으로 열지 않아도 이번 시즌의 고백송이 고정 슬라이드에 실리게 한다.
+  // 이미 그 곡이 적혀 있거나 고칠 곡이 없으면 `applied`가 false이고, 그때는 받은
+  // 바이트를 그대로 쓴다.
+  const confession = input.confessionSong
+    ? await applyConfessionSong(backSource, input.confessionSong)
+    : null
+  const backSlides = confession?.applied ? confession.data : backSource
 
   const overview: DeckOverviewItem[] = []
   let merged: Uint8Array = new Uint8Array(frontSlides)
@@ -129,10 +156,15 @@ export async function buildDeck(input: DeckInput, assets: SlideAssets): Promise<
     ...expandDeckSegment({ kind: 'front', count: frontCount, labelAt: (i, count) => `Front ${i + 1}/${count}` }),
   )
 
-  if (input.songs.length > 0) {
-    const lyricsTemplate = await assets.load('template.pptx')
-    merged = await mergePptxDecks(merged, await buildPptx(lyricsTemplate, input.songs), 'STORE')
-    overview.push(...input.songs.flatMap((s) => songOverviewItems(s)))
+  // **설교 후 찬양은 예배 순서에서 다른 자리에 있다.** 같은 템플릿으로 만들되, 여는
+  // 찬양이 아니라 설교 뒤의 기도 다음에 끼워 넣는다 (아래).
+  const praiseSongs = input.songs.filter((song) => !song.postSermon)
+  const postSermonSongs = input.songs.filter((song) => song.postSermon)
+  const loadLyricsTemplate = () => assets.load('template.pptx')
+
+  if (praiseSongs.length > 0) {
+    merged = await mergePptxDecks(merged, await buildPptx(await loadLyricsTemplate(), praiseSongs), 'STORE')
+    overview.push(...praiseSongs.flatMap((s) => songOverviewItems(s)))
   }
 
   merged = await mergePptxDecks(merged, await extractSlideSubset(serviceTemplate, [...SERVICE_SLIDES.prayer1]), 'STORE')
@@ -180,6 +212,16 @@ export async function buildDeck(input: DeckInput, assets: SlideAssets): Promise<
 
   merged = await mergePptxDecks(merged, await extractSlideSubset(serviceTemplate, [...SERVICE_SLIDES.prayer2]), 'STORE')
   overview.push(...expandDeckSegment({ kind: 'prayer', count: SERVICE_SLIDES.prayer2.length, labelAt: () => '기도' }))
+
+  // 설교 후 찬양 — 설교 뒤의 기도와 광고 앞의 기도 사이다. 그 곡과 뒤따르는 기도는 예배
+  // 순서의 **한 칸**이라, 설교 후 찬양이 없는 주에는 둘을 함께 건너뛴다 — 따로 두면
+  // 기도 슬라이드가 연달아 두 장 나온다.
+  if (postSermonSongs.length > 0) {
+    merged = await mergePptxDecks(merged, await buildPptx(await loadLyricsTemplate(), postSermonSongs), 'STORE')
+    overview.push(...postSermonSongs.flatMap((s) => songOverviewItems(s)))
+    merged = await mergePptxDecks(merged, await extractSlideSubset(serviceTemplate, [...SERVICE_SLIDES.prayer3]), 'STORE')
+    overview.push(...expandDeckSegment({ kind: 'prayer', count: SERVICE_SLIDES.prayer3.length, labelAt: () => '기도' }))
+  }
 
   const announcementItems = parseAnnouncements(input.announcementText)
   if (announcementItems.length > 0) {

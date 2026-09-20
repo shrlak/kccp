@@ -6,6 +6,7 @@
 import { useCallback, useMemo, useState } from 'react'
 import type { AdditionalFile } from './lib/additionalFiles/types'
 import type { DeckInput } from './lib/buildDeck'
+import { emptySong } from './lib/contiSongs'
 import type { Section, Song } from './lib/utils/types'
 
 export const WIZARD_STEPS = [
@@ -34,19 +35,9 @@ export const TRANSLATIONS = [
   { id: 'kjv', label: 'KJV' },
 ] as const
 
-let nextId = 1
-const newId = (prefix: string) => `${prefix}-${nextId++}`
-
-export function emptySong(title = ''): Song {
-  return {
-    id: newId('song'),
-    title,
-    sections: [{ label: 'V1', lines: [''] }],
-    order: ['V1'],
-    // 템플릿의 기본값. 넘기면 가사가 슬라이드 밖으로 흐른다.
-    linesPerSlide: 4,
-  }
-}
+// 빈 곡 만들기는 콘티를 읽는 쪽(`lib/contiSongs.ts`)과 같은 값을 쓴다 — 한 장당 줄 수의
+// 기본값이 두 곳에서 갈리면 같은 곡이 화면마다 다른 장 수로 나간다.
+export { emptySong }
 
 export interface WizardState extends DeckInput {
   /** 콘티에서 읽은 예배 날짜 ("8/30/26" 같은, 사람이 적은 모양). */

@@ -1,4 +1,4 @@
-import { aiProxyPost } from './proxy';
+import { aiPath, aiProxyPost } from './proxy';
 // Gemini Flash vision engine for turning a scanned 악보 image into a structured
 // draft song. Called directly from the browser with the user's own free Google
 // AI Studio key (no backend, no SDK — a plain fetch to the REST endpoint, which
@@ -216,7 +216,7 @@ export function extractGeminiText(response: unknown): string {
 
 /** 이 모델로 한 쪽(또는 여러 쪽)을 읽어 달라고 프록시에 던진다. */
 function postToProxy(model: string, body: unknown): Promise<Response> {
-  return aiProxyPost(`/api/slides/ai/gemini/${encodeURIComponent(model)}`, body);
+  return aiProxyPost(aiPath(`/gemini/${encodeURIComponent(model)}`), body);
 }
 
 /**

@@ -512,13 +512,79 @@ Deno.test("소유자는 신원을 대체하지 않고 영역만 넓힌다", asyn
   assertEquals(r?.role, "super_admin");
   assertEquals(r?.group, "대학부");
   // 넓어지는 것은 영역뿐이다.
-  assertEquals(r?.areas, ["attend", "slides"]);
+  assertEquals(r?.areas, ["attend", "slides", "praise"]);
 });
 
 Deno.test("소유자가 명단에 없어도 들어온다", async () => {
   const r = await verifyAdminJwt(mockSb({}, {}, OWNER_EMAIL), "jwt");
   assertEquals(r?.role, "owner");
-  assertEquals(r?.areas, ["attend", "slides"]);
+  assertEquals(r?.areas, ["attend", "slides", "praise"]);
+  // 찬양 영역은 있어도 팀은 없다 — 자격에 없는 팀을 자격이 지어내지 않는다.
+  // 그 화면이 팀을 묻는 이유가 이것이다.
+  assertEquals(r?.team, undefined);
+});
+
+// ── 찬양팀 인도자 ──────────────────────────────────────────────────────────
+// 영역을 주는 것은 `team_leaders` 의 줄 하나뿐이다. 비밀번호에는 이 영역이 없고
+// (passwordGrant 는 언제나 ['attend']), 미디어 역할 계정에도 없다.
+
+const LEADER_ROW = {
+  team_leaders: {
+    // 저장된 이메일은 사람이 적은 대소문자 그대로다 — 로그인은 소문자로 들어온다.
+    email: "Leader@Example.com",
+    team_id: "team-ju",
+    teams: { id: "team-ju", name: "주랑 찬양팀", kind: "praise", partition: "youth" },
+  },
+};
+
+Deno.test("인도자는 자기 팀과 함께 들어오고, 부(部)는 팀이 정한다", async () => {
+  const r = await verifyAdminJwt(mockSb(LEADER_ROW, {}, "leader@example.com"), "jwt");
+  assertEquals(r?.role, "praise_leader");
+  assertEquals(r?.areas, ["praise"]);
+  assertEquals(r?.team?.id, "team-ju");
+  // 인도자가 어느 부 교인이냐가 아니라 **어느 팀을 이끄느냐**가 콘티의 부를 정한다.
+  assertEquals(r?.partition, "youth");
+  // 명단에는 닿지 않는다 — 영역이 하나뿐이고, resolveAdmin 이 그것을 본다.
+  assertEquals(
+    await resolveAdmin(mockSb(LEADER_ROW, {}, "leader@example.com"), req("/api/admin/list", { authorization: "Bearer jwt" })),
+    null,
+  );
+});
+
+Deno.test("인도자 자격은 신원을 대체하지 않고 영역만 넓힌다", async () => {
+  // members 행이 있는 인도자 — 그 사람으로 남아야 로그인 기록에 이름이 남는다.
+  const sb = mockSb(
+    { ...LEADER_ROW, members: { id: "m-1" }, member_roles: { role: "leader", group_name: "청년부", subgroup: "건영동산" } },
+    {},
+    "leader@example.com",
+  );
+  const r = await verifyAdminJwt(sb, "jwt");
+  assertEquals(r?.memberId, "m-1");
+  assertEquals(r?.role, "leader");
+  assertEquals(r?.group, "청년부");
+  assertEquals(r?.areas, ["attend", "praise"]);
+  assertEquals(r?.team?.id, "team-ju");
+});
+
+Deno.test("ilike 가 집어 온 줄이라도 이메일이 정확히 같아야 한다", async () => {
+  // `_` 는 이메일에 쓸 수 있는 글자인데 ilike 의 패턴에서는 아무 글자 하나를 뜻한다.
+  // 스텁은 질의를 흉내 내지 않고 늘 같은 줄을 주므로, 여기서 보는 것은 **집어 온 줄을
+  // 다시 견주는가** 하나다 — 그 견주기가 없으면 남의 팀 콘티를 여는 길이 된다.
+  assertEquals(await verifyAdminJwt(mockSb(LEADER_ROW, {}, "leaderXexample.com"), "jwt"), null);
+});
+
+Deno.test("`team_leaders` 에 줄이 없으면 아무것도 아니다 — 구글 로그인만으로는 문이 열리지 않는다", async () => {
+  assertEquals(await verifyAdminJwt(mockSb({}, {}, "stranger@example.com"), "jwt"), null);
+  // 줄을 내리는 것(active=false)과 팀을 내리는 것(teams.active=false)도 같은 답이어야
+  // 한다. 그 거르기는 질의 쪽에 있어(praiseTeamOf) 여기 스텁으로는 확인되지 않는다 —
+  // 회수가 실제로 듣는지는 마이그레이션 재생과 손으로 하는 확인이 맡는다.
+  assertEquals(await verifyAdminJwt(mockSb({}, {}, "leader@example.com"), "jwt"), null);
+});
+
+Deno.test("비밀번호는 찬양 영역을 주지 않는다", () => {
+  for (const password of [SUPER_PASSWORD, WELCOMING_PASSWORD]) {
+    assertEquals(passwordGrant(password)?.areas, ["attend"]);
+  }
 });
 
 // ── 서버가 막는다 ──────────────────────────────────────────────────────────
@@ -550,6 +616,9 @@ Deno.test("출석 비밀번호로 슬라이드 라우트를 열면 거부된다"
 Deno.test("소유자는 양쪽 다 열린다", async () => {
   const sb = mockSb({}, {}, OWNER_EMAIL);
   const auth = { authorization: "Bearer jwt" };
-  assertEquals((await resolveAdmin(sb, req("/api/admin/list", auth)))?.areas, ["attend", "slides"]);
-  assertEquals((await resolveAdmin(sb, req("/api/slides/deck", auth)))?.areas, ["attend", "slides"]);
+  const owned = ["attend", "slides", "praise"];
+  assertEquals((await resolveAdmin(sb, req("/api/admin/list", auth)))?.areas, owned);
+  assertEquals((await resolveAdmin(sb, req("/api/slides/deck", auth)))?.areas, owned);
+  // 찬양도 열린다 — 잘못 앉은 콘티를 옮길 자격이 하나는 있어야 한다 (praise.ts).
+  assertEquals((await resolveAdmin(sb, req("/api/praise/me", auth)))?.areas, owned);
 });

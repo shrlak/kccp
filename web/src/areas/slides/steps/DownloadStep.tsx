@@ -5,6 +5,7 @@
 // 07(정리)은 미디어팀이 두 주 연속 KCCP만으로 만든 다음에야 온다.
 import { useState } from 'react'
 import { browserSlideAssets, buildDeck, hasAnyContent, type BuiltDeck } from '../lib/buildDeck'
+import { lookupConfessionSong } from '../lib/utils/confessionSong'
 import { uploadDeck } from '../lib/setlists'
 import type { Wizard } from '../useWizard'
 import { Button, Card, Field, Notice, TextInput } from '../ui'
@@ -26,7 +27,12 @@ export function DownloadStep({ wizard }: { wizard: Wizard }) {
     setError(null)
     setSaved(false)
     try {
-      setBuilt(await buildDeck(state, browserSlideAssets(import.meta.env.BASE_URL || '/')))
+      const base = import.meta.env.BASE_URL || '/'
+      // 공동체 고백송은 그 주의 입력이 아니라 **이번 시즌의 설정**이다 (관리자 설정이
+      // 제목만 적어 두고, 가사는 곡 라이브러리에서 온다). 가사를 못 찾으면 곡이 아니라
+      // null이 오고, 그때 back 덱은 받은 그대로 나간다.
+      const confession = await lookupConfessionSong(base)
+      setBuilt(await buildDeck({ ...state, confessionSong: confession.song }, browserSlideAssets(base)))
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
       setBuilt(null)

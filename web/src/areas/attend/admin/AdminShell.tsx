@@ -11,6 +11,12 @@ import { KccpMark } from '../checkin/KccpMark'
 // 본문을 내려받을 이유가 없기 때문이다 — 지금은 껍데기라 가볍지만, 마법사가 들어오면
 // 이 한 줄이 랜딩의 무게를 지키는 것이 된다. (AdminShell·KioskShell과 같은 이유.)
 const SlidesShell = lazy(() => import('../../slides/SlidesShell').then((m) => ({ default: m.SlidesShell })))
+// 찬양 영역도 같은 이유로 떨어뜨린다. 인도자의 폰이 명단 UI를 내려받을 이유가 없고,
+// 출석 담당자가 pdfjs·jszip을 내려받을 이유도 없다. 이 화면은 슬라이드 조각과 대부분을
+// 나눠 쓰므로(조립·인식) 새로 지는 무게는 화면 하나뿐이다.
+const PraiseLeaderShell = lazy(() =>
+  import('../../praise/PraiseLeaderShell').then((m) => ({ default: m.PraiseLeaderShell })),
+)
 
 export function AdminShell() {
   const status = useAdminAuth((s) => s.status)
@@ -29,6 +35,13 @@ export function AdminShell() {
       return (
         <Suspense fallback={<Splash />}>
           <SlidesShell />
+        </Suspense>
+      )
+    }
+    if (area === 'praise') {
+      return (
+        <Suspense fallback={<Splash />}>
+          <PraiseLeaderShell />
         </Suspense>
       )
     }

@@ -27,6 +27,24 @@ vi.mock('./slides/lib/setlists', () => ({
   uploadDeck: () => Promise.resolve({ path: 'p' }),
 }))
 
+// 인도자 화면도 열자마자 서버에 자기가 누구인지 묻는다. 같은 이유로 세워 둔다.
+vi.mock('./praise/lib/conti', () => ({
+  getLeaderContext: () =>
+    Promise.resolve({
+      team: { id: 'team-ju', name: '주랑 찬양팀', kind: 'praise', partition: 'youth' },
+      teams: [],
+      services: [{ id: 'sv-3', name: '3부', startsAt: '14:00:00', partition: 'youth', leadsPpt: true }],
+      defaultServiceId: 'sv-3',
+      serviceDate: '2026-09-20',
+      leader: { email: 'leader@example.com', name: '' },
+    }),
+  getMySetlists: () => Promise.resolve({ setlists: [] }),
+  uploadConti: vi.fn(),
+  uploadDeck: vi.fn(),
+  contiUrl: vi.fn(),
+  deckUrl: vi.fn(),
+}))
+
 function signedInAs(identity: Partial<AdminIdentity>) {
   useAdminAuth.setState({
     status: 'authed',
@@ -75,6 +93,15 @@ describe('영역 라우팅 — 자격이 무엇을 띄울지 정한다', () => {
     // 여기서 묻는 것은 "어느 화면이 뜨는가"다.
     expect(screen.getByRole('button', { name: /1 찬양/ })).toBeInTheDocument()
     expect(screen.getByText('장년부')).toBeInTheDocument()
+  })
+
+  it('찬양만 가진 자격(인도자)은 콘티 화면으로 가고, 명단에는 닿지 않는다', async () => {
+    signedInAs({ role: 'praise_leader', areas: ['praise'] })
+    renderShell()
+    expect(await screen.findByRole('heading', { name: '콘티 올리기' })).toBeInTheDocument()
+    expect(screen.queryByText('출석 패널')).not.toBeInTheDocument()
+    // 마법사의 여섯 단계도 뜨지 않는다 — 인도자에게는 그 물음이 해당하지 않는다.
+    expect(screen.queryByRole('button', { name: /1 찬양/ })).not.toBeInTheDocument()
   })
 
   it('영역을 둘 가진 자격에게만 고르기 화면이 뜬다', async () => {

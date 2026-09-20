@@ -6,24 +6,12 @@
 // 아직 안 올라왔으면 그 자리에서 올린다.
 import { useEffect, useState } from 'react'
 import { loadConti, type ContiDocument } from '../lib/utils/contiPdf'
+import { songsFromConti } from '../lib/contiSongs'
 import { recognizeConti, type RecognitionStatus } from '../lib/recognizeConti'
 import { contiUrl, getServices, getSetlists, uploadConti, type Service, type Setlist } from '../lib/setlists'
 import type { Song } from '../lib/utils/types'
-import { emptySong, type Wizard } from '../useWizard'
+import type { Wizard } from '../useWizard'
 import { Button, Card, Field, FilePicker, Notice, TextArea, TextInput } from '../ui'
-
-/**
- * 콘티 표지에서 읽은 것을 그 주의 내용으로 옮긴다. 가사는 아직 비어 있다 — 제목·키와,
- * 그 곡의 악보가 몇 쪽인지(`pageIndex`)까지. 그 쪽 번호가 인식이 곡과 악보를 잇는
- * 유일한 끈이다.
- */
-function songsFromConti(entries: { title: string; key?: string; pageIndex?: number }[]): Song[] {
-  return entries.map((entry) => ({
-    ...emptySong(entry.title),
-    key: entry.key,
-    pageIndex: entry.pageIndex,
-  }))
-}
 
 export function PraiseStep({ wizard }: { wizard: Wizard }) {
   const { state, patch, songs } = wizard

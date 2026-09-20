@@ -5,9 +5,17 @@
 // Gemini·OpenRouter 키를 숨길 곳이 없었다. 이제 그 자리는 Supabase 엣지 함수다.
 //
 // 옮겨 오면서 **버그가 아니라 기능이 하나 생긴다.** 지금은 배포된 ppt 앱을 연 누구나
-// 교회의 AI 무료 한도를 쓸 수 있다. 여기서는 `areas`에 'slides'를 가진 계정만 쓴다 —
-// 경로가 `/api/slides/` 로 시작하므로 `areaOf()`가 'slides'를 요구하고, **출석 비밀번호로는
-// 이 함수를 부를 수 없다.** 그 판정을 위해 한 줄도 더 쓰지 않았다.
+// 교회의 AI 무료 한도를 쓸 수 있다. 여기서는 영역을 가진 계정만 쓴다 — 경로 접두사가
+// 곧 영역이라(`areaOf()`), **출석 비밀번호로는 이 함수를 부를 수 없다.** 그 판정을 위해
+// 한 줄도 더 쓰지 않았다.
+//
+// 접두사는 둘이다: `/api/slides/ai/…`(미디어팀의 마법사)와 `/api/praise/ai/…`(찬양팀
+// 인도자의 자동 제작). **같은 규칙을 두 번 적지 않고 접두사만 벗긴다** — 두 벌이 되면
+// 한쪽이 뒤처지고, 뒤처진 쪽이 열려 있는 쪽이 된다.
+//
+// 인도자에게 이 문을 여는 것은 판단이다: 콘티에서 가사를 읽는 일이 곧 「자동으로 만든다」
+// 이므로, 그것 없이는 이 영역이 업로드 창구에 지나지 않는다. 쓰는 만큼은 그대로 센다
+// (`record_ai_usage`) — 한도는 키 하나에 붙어 있고, 두 문이 같은 카운터를 쓴다.
 //
 // ── 왜 attendance-api 안이 아닌가 ─────────────────────────────────────────────────────
 // 한 요청이 상류 모델을 기다리는 동안 아이솔레이트를 붙들고 있는데, /api/roster 는 앱의
@@ -68,6 +76,12 @@ function canWriteSettings(role: Role): boolean {
   return role.role === "super_admin" || isOwner(role.email);
 }
 
+/**
+ * 이 함수가 답하는 영역 접두사들. 새 영역을 더할 때 여기 한 줄이면 된다 — 그리고 그
+ * 한 줄이 곧 「그 영역이 교회의 AI 무료 한도를 쓴다」는 결정이라, 조용히 지나가지 않는다.
+ */
+const AREA_PREFIXES = ["/api/slides/ai", "/api/praise/ai"] as const;
+
 /** 사용량 한 건을 센다. 계량 실패가 인식 결과를 잃게 하면 안 되므로 삼킨다. */
 // deno-lint-ignore no-explicit-any
 async function recordUsage(sb: any, provider: string, model: string, success: boolean, tokens: {
@@ -113,14 +127,23 @@ Deno.serve(async (req: Request) => {
     return json({ status: "ok", ts: Date.now() });
   }
 
-  // 이 함수의 모든 경로는 슬라이드 영역이다. resolveAdmin이 자격을 풀고 areaOf가 요구하는
-  // 영역을 확인한다 — 출석 비밀번호는 areas: ['attend'] 뿐이라 여기서 떨어진다.
+  // 영역 접두사를 벗겨 낸 나머지. 아래의 모든 분기는 이것 하나로 읽으므로, 경로 규칙이
+  // 영역마다 갈라지지 않는다. **접두사를 지우는 것이지 검사를 건너뛰는 것이 아니다** —
+  // 검사는 바로 아래 resolveAdmin 이 원래 경로(`req`)로 한다.
+  const tail = AREA_PREFIXES.reduce<string | null>(
+    (found, prefix) => found ?? (p.startsWith(prefix) ? p.slice(prefix.length) : null),
+    null,
+  );
+  if (tail === null) return json({ error: "not found" }, 404);
+
+  // resolveAdmin이 자격을 풀고, areaOf가 **원래 경로**에서 요구하는 영역을 확인한다 —
+  // 출석 비밀번호는 areas: ['attend'] 뿐이라 두 접두사 어디에서도 떨어진다.
   const role = await resolveAdmin(sb, req);
   if (!role) return json({ error: "unauthorized" }, 401);
 
   try {
     // ── 공유 설정 ─────────────────────────────────────────────────────────────────────
-    if (p === "/api/slides/ai/settings") {
+    if (tail === "/settings") {
       if (req.method === "GET") {
         const { data } = await sb.from("config").select("slides_ai_settings").eq("id", 1).maybeSingle();
         return json(sanitizeSharedSettings(data?.slides_ai_settings));
@@ -140,7 +163,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // ── 사용량 ────────────────────────────────────────────────────────────────────────
-    if (req.method === "GET" && p === "/api/slides/ai/usage") {
+    if (req.method === "GET" && tail === "/usage") {
       // 이틀치를 읽고 오늘 것만 접는다. 하루치만 읽으면 공급자마다 "오늘"이 다른
       // 시간대에서 계산되므로 자정 언저리에 한쪽이 통째로 빈다.
       const since = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString().slice(0, 10);
@@ -157,10 +180,10 @@ Deno.serve(async (req: Request) => {
     if (req.method !== "POST") return json({ error: "not found" }, 404);
 
     // ── Gemini ────────────────────────────────────────────────────────────────────────
-    if (p.startsWith("/api/slides/ai/gemini/")) {
+    if (tail.startsWith("/gemini/")) {
       const key = env("GEMINI_API_KEY");
       if (!key) return json({ error: "GEMINI_API_KEY not configured on the proxy" }, 500);
-      const model = decodeURIComponent(p.slice("/api/slides/ai/gemini/".length));
+      const model = decodeURIComponent(tail.slice("/gemini/".length));
       if (!model) return json({ error: "missing model" }, 400);
 
       const body = await req.text();
@@ -177,7 +200,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // ── OpenRouter ───────────────────────────────────────────────────────────────────
-    if (p === "/api/slides/ai/openrouter") {
+    if (tail === "/openrouter") {
       let body: Record<string, unknown>;
       try { body = await req.json(); } catch { return json({ error: "invalid JSON body" }, 400); }
 

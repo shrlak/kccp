@@ -216,9 +216,24 @@ export function passwordRole(password: string): "super_admin" | "leader" | "welc
 // Distinct from a member's is_staff flag, which is unrelated.
 export type AdminRole =
   | "super_admin" | "leader" | "pastor" | "welcoming" | "staff"
-  // 합치면서 생긴 둘. 둘 다 출석 명단에는 닿지 않는다 (areas가 막는다).
-  | "media"   // 부서 미디어팀 역할 계정 — 자기 부의 슬라이드만
-  | "owner";  // 소유자 — 모든 경계를 넘는다
+  // 합치면서 생긴 셋. 전부 출석 명단에는 닿지 않는다 (areas가 막는다).
+  | "media"          // 부서 미디어팀 역할 계정 — 자기 부의 슬라이드만
+  | "praise_leader"  // 찬양팀 인도자 — 자기 팀의 콘티만
+  | "owner";         // 소유자 — 모든 경계를 넘는다
+
+/**
+ * 이 로그인이 이끄는 찬양팀. `praise` 영역의 모든 범위가 여기서 나온다 — 어느 예배의
+ * 콘티를 올릴 수 있는지도, 그 콘티가 어느 부(部)의 것인지도.
+ *
+ * **자격이지 요청이 아니다.** 클라이언트가 팀을 보내는 길은 없다: 보낼 수 있으면 그것이
+ * 곧 남의 팀 콘티를 덮어쓰는 길이다.
+ */
+export interface LeaderTeam {
+  id: string;
+  name: string;
+  kind: "praise" | "choir";
+  partition: Partition;
+}
 
 export interface Role {
   memberId: string;
@@ -241,6 +256,10 @@ export interface Role {
   // 이 자격이 들어갈 수 있는 영역. resolveAdmin이 라우트마다 검사한다 — 탭을 숨기는 것은
   // 화면일 뿐이고, 비밀번호는 bearer 자격이라 서버가 막지 않으면 curl 한 번에 뚫린다.
   areas: Area[];
+  // 이 사람이 이끄는 찬양팀 — `team_leaders`에 줄이 있을 때만. 없는 것이 보통이다
+  // (출석 쪽 자격에는 뜻이 없는 값이다). 소유자는 'praise' 영역을 갖되 팀이 없으므로,
+  // 그 화면이 팀을 **묻는다** — 자격에 없는 팀을 자격이 지어내지 않는다.
+  team?: LeaderTeam;
 }
 
 // What an admin may see. `all` is "the whole partition", which is not the whole table:
@@ -430,11 +449,36 @@ export async function verifyAdminJwt(sb: SB, jwt: string, wanted?: Partition | n
 
   const resolved = await resolveMemberLogin(sb, email, wanted);
 
+  // 찬양팀 인도자. 소유자와 같은 모양이다 — **신원을 대체하지 않고 영역만 넓힌다.**
+  // members 행이 있는 인도자(출석 쪽 역할도 가진 사람)는 그 사람으로 남아야 로그인
+  // 기록에 이름이 남고, 없는 인도자도 들어올 수 있어야 콘티가 올라온다.
+  //
+  // 부(部)는 **팀이 정한다**: 인도자가 어느 부 교인이냐가 아니라 어느 팀을 이끄느냐가
+  // 그 콘티가 어느 예배의 것인지를 정하기 때문이다 (헵시바는 장년부, 주랑은 대학·청년부).
+  const team = await praiseTeamOf(sb, email);
+  if (team && !isOwner(email)) {
+    if (resolved) {
+      return { ...resolved, areas: [...resolved.areas, "praise"], team };
+    }
+    return {
+      memberId: "",
+      role: "praise_leader",
+      group: "",
+      subgroup: "",
+      ministry: "",
+      partition: team.partition,
+      email,
+      areas: ["praise"],
+      team,
+    };
+  }
+
   // 소유자는 **신원을 대체하지 않고 영역만 넓힌다.** members 행이 있으면 그 사람으로
   // 남아야 하기 때문이다 — 로그인 기록에 남는 이름도, 로그인 기록 열람 권한도 그
   // memberId에 걸려 있다. 갈아치우면 그 둘이 조용히 사라진다.
   if (isOwner(email)) {
-    if (resolved) return { ...resolved, areas: ["attend", "slides"] };
+    const owned: Area[] = ["attend", "slides", "praise"];
+    if (resolved) return { ...resolved, areas: owned, ...(team ? { team } : {}) };
     // 명단에 행이 없는 소유자 — 그래도 들어올 수 있어야 한다.
     return {
       memberId: "",
@@ -444,7 +488,8 @@ export async function verifyAdminJwt(sb: SB, jwt: string, wanted?: Partition | n
       ministry: "",
       partition: readPartition(wanted ?? null) ?? "youth",
       email,
-      areas: ["attend", "slides"],
+      areas: owned,
+      ...(team ? { team } : {}),
     };
   }
   return resolved;
@@ -500,6 +545,53 @@ async function resolveMemberLogin(
     return home;
   }
   return null;
+}
+
+/**
+ * 이 이메일이 이끄는 찬양팀 — `team_leaders` 의 살아 있는 줄 하나.
+ *
+ * 이메일 하나에 팀 하나인 것은 데이터베이스가 지킨다 (`team_leaders_one_team_per_email`).
+ * 그래도 `limit(1)` 을 두는 이유는, 그 제약이 언젠가 풀렸을 때 이 함수가 **아무것도
+ * 돌려주지 않는 쪽으로** 깨지지 않게 하기 위해서다 — 인도자가 로그인하지 못하는 실패는
+ * 주일 아침에 발견된다.
+ *
+ * 팀이 `active=false` 면 인도자도 아니다: 팀이 없어진 뒤에도 남아 있는 자격은, 회수할 수
+ * 있는 자격을 쓰기로 한 이유를 조용히 지운다.
+ */
+export async function praiseTeamOf(sb: SB, email: string): Promise<LeaderTeam | null> {
+  const needle = email.trim().toLowerCase();
+  if (!needle) return null;
+  const { data } = await sb
+    .from("team_leaders")
+    .select("email, team_id, teams!inner(id, name, kind, partition, active)")
+    .ilike("email", needle)
+    .eq("active", true)
+    .eq("teams.active", true)
+    .limit(1)
+    .maybeSingle();
+
+  // ilike 로 찾고 **다시 정확히 견준다.** ilike 의 패턴에서 `_` 는 아무 글자 하나를
+  // 뜻하는데 `_` 는 이메일에 쓸 수 있는 글자다 — 그래서 `a_b@x.com` 으로 들어온 로그인이
+  // `axb@x.com` 의 줄을 집어 올 수 있다. 둘 다 실재하는 인도자라도 **팀이 다르면 남의 팀
+  // 콘티를 여는 것**이고, 그 잘못은 콘티가 엉뚱한 예배에 앉은 주일 아침에야 드러난다.
+  // (대소문자를 무시해야 해서 eq 를 쓸 수 없는 자리이고, 견주기는 공짜다.)
+  const found = data as { email?: string; teams?: unknown } | null;
+  if ((found?.email ?? "").trim().toLowerCase() !== needle) return null;
+
+  // PostgREST 의 임베드는 관계에 따라 객체 하나이거나 배열이다. 여기서는 팀이 하나뿐인
+  // 관계이지만, 두 모양을 다 읽어 둔다 — 틀리면 인도자가 로그인하지 못한다.
+  const raw = found?.teams;
+  const row = (Array.isArray(raw) ? raw[0] : raw) as
+    | { id?: string; name?: string; kind?: string; partition?: string }
+    | undefined;
+  const partition = readPartition(row?.partition ?? null);
+  if (!row?.id || !partition) return null;
+  return {
+    id: row.id,
+    name: row.name || "",
+    kind: row.kind === "choir" ? "choir" : "praise",
+    partition,
+  };
 }
 
 // Unified resolver: try Google JWT first (Authorization: Bearer), fall back to

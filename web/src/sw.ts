@@ -81,9 +81,10 @@ registerRoute(
   ({ url }) =>
     url.origin === self.location.origin &&
     (new RegExp(`^${BASE}(slides|bible-text|cmaps|standard_fonts)/`).test(url.pathname) ||
-      // 슬라이드 코드 청크와 pdf.js 워커도 같은 통에. 이름에 내용 해시가 붙으므로 오래된
-      // 항목은 참조되지 않을 뿐 잘못 쓰이지 않는다.
-      /\/assets\/(slides-|pdf\.worker)/.test(url.pathname)),
+      // 슬라이드·찬양 코드 청크와 pdf.js 워커도 같은 통에. 이름에 내용 해시가 붙으므로
+      // 오래된 항목은 참조되지 않을 뿐 잘못 쓰이지 않는다. 두 영역이 같은 통을 쓰는
+      // 이유는 대부분을 나눠 쓰기 때문이다 — 조립도 인식도 같은 모듈이다.
+      /\/assets\/(slides-|praise-|pdf\.worker)/.test(url.pathname)),
   new CacheFirst({
     cacheName: 'kccp-slide-assets-v1',
     plugins: [

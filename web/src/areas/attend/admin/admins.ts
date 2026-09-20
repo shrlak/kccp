@@ -4,12 +4,13 @@ import type { Partition } from '../../../lib/partition'
 // 'staff'는 합성 비상구 역할이라 admin 행으로 저장되지 않는다 — 순위는 Record의 빠짐없음을
 // 만족시키려고 있을 뿐, 관리자 목록에 실제로 나타나지 않는다.
 //
-// 'owner'와 'media'도 같다. 둘 다 member_roles 행이 아니라 **자격 자체**에서 나온다
-// (auth.ts의 OWNER_EMAIL·MEDIA_ACCOUNTS). 그래서 이 표에는 자리만 있고 쓰이지 않는다.
+// 'owner'·'media'·'praise_leader'도 같다. 셋 다 member_roles 행이 아니라 **자격 자체**에서
+// 나온다 (auth.ts의 OWNER_EMAIL·MEDIA_ACCOUNTS·team_leaders). 그래서 이 표에는 자리만
+// 있고 쓰이지 않는다.
 // Record를 빠짐없이 두는 것이 여기서 값을 한다: 서버에 역할이 하나 늘면 이 줄이
 // 컴파일을 멈춰, 새 역할이 목록에서 조용히 순위 undefined로 정렬되는 일을 막는다.
 const RANK: Record<AdminRole, number> = {
-  super_admin: 0, pastor: 1, leader: 2, welcoming: 3, staff: 4, owner: 5, media: 6,
+  super_admin: 0, pastor: 1, leader: 2, welcoming: 3, staff: 4, owner: 5, media: 6, praise_leader: 7,
 }
 
 // Admin grants ordered by role seniority, then by name.

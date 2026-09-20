@@ -46,9 +46,16 @@ export default defineConfig({
         // manualChunks로 몰지 않는 이유: 그렇게 하면 롤다운이 공유 모듈(supabase 클라이언트,
         // 로그인 스토어)까지 이 청크에 넣어 버리고, 랜딩이 슬라이드 청크를 정적으로
         // import 하게 된다 — 막으려던 것을 정확히 반대로 하는 셈이다.
+        //
+        // 찬양 영역도 같은 규칙을 탄다. 그 화면은 슬라이드의 조립·인식을 그대로 쓰므로
+        // 무게가 같은 자릿수이고, 출석만 쓰는 사람이 받을 이유도 똑같이 없다. **찬양을
+        // 먼저 본다**: 두 접두사가 다 맞는 청크(찬양 화면이 슬라이드 모듈을 끌고 온
+        // 경우)는 찬양 쪽으로 이름 붙는 편이 읽기 쉽고, 어느 쪽 이름이든 선캐시에서는
+        // 똑같이 빠진다.
         chunkFileNames(chunk: { moduleIds?: string[]; name: string }) {
-          const slides = chunk.moduleIds?.some((id) => id.includes('/src/areas/slides/'))
-          return slides ? 'assets/slides-[hash].js' : 'assets/[name]-[hash].js'
+          const has = (dir: string) => chunk.moduleIds?.some((id) => id.includes(`/src/areas/${dir}/`))
+          if (has('praise')) return 'assets/praise-[hash].js'
+          return has('slides') ? 'assets/slides-[hash].js' : 'assets/[name]-[hash].js'
         },
       },
     },
@@ -97,6 +104,7 @@ export default defineConfig({
           // 같은 이유다 — 대부분의 세션은 출석만 쓰고, 그 세션들이 배포마다 이 무게를
           // 받을 이유가 없다. sw.ts가 처음 쓸 때 런타임 캐시에 담는다.
           '**/slides-*',
+          '**/praise-*',
           '**/pdf.worker*',
           'slides/**',
           'bible-text/**',

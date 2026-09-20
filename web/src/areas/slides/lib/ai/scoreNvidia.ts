@@ -1,4 +1,4 @@
-import { aiProxyPost } from './proxy';
+import { aiPath, aiProxyPost } from './proxy';
 // OpenRouter vision engine for score recognition. This legacy filename is
 // retained to avoid a noisy module rename, but every catalog model handled
 // here is an OpenRouter :free endpoint (including NVIDIA's Nemotron). Images
@@ -132,7 +132,7 @@ export function extractOpenRouterText(response: unknown): string {
  * 사라진 이유다. 브라우저가 OpenRouter를 직접 부르는 길은 없앴다.
  */
 async function callOpenRouter(body: unknown): Promise<string> {
-  const res = await aiProxyPost('/api/slides/ai/openrouter', body);
+  const res = await aiProxyPost(aiPath('/openrouter'), body);
 
   if (!res.ok) {
     let detail = `HTTP ${res.status}`;
