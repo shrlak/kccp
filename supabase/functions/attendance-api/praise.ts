@@ -11,6 +11,7 @@
 //
 // `slides.ts`가 그렇듯 순수 함수만 모았다. 서명 URL을 만드는 자리(index.ts)는 이
 // 규칙들을 부를 뿐이고, 그래서 규칙에는 단위 테스트가 붙는다.
+import { canPickTeam } from "./auth.ts";
 import type { LeaderTeam, Role } from "./auth.ts";
 import { isIsoDate, type SetlistRow, type SlidePartition } from "./slides.ts";
 
@@ -117,16 +118,21 @@ export function defaultService(services: LeaderService[]): LeaderService | null 
  * 콘티가 잘못된 예배에 앉았을 때 그것을 옮길 자격이 아무에게도 없으면, 고치는 방법이
  * 데이터베이스를 직접 여는 것밖에 없다.
  *
- * 최고관리자는 **예외가 아니다.** 출석 비밀번호로 들어온 최고관리자는 `areas`가
- * ['attend'] 뿐이라 이 경로에 닿지도 못하지만, 구글로 들어온 최고관리자에게도 남의 팀
+ * 출석 쪽 최고관리자는 **예외가 아니다.** 출석 비밀번호로 들어온 최고관리자는 `areas`가
+ * ['attend'] 뿐이라 이 경로에 닿지도 못하고, 구글로 들어온 최고관리자에게도 남의 팀
  * 콘티를 여는 자격을 주지 않는다 — 그 사람이 콘티를 다루는 자리는 슬라이드 영역이고,
  * 거기서는 부(部)가 범위다.
+ *
+ * 예외는 **팀이 없는 자격**이다: 소유자와 영역 비밀번호(kccp1980·kccpmedia·kccppraise).
+ * 팀이 없으니 「자기 팀」으로 좁힐 것이 없고, 좁힐 수 없는 자격을 좁은 척 다루면 그
+ * 화면은 아무것도 못 한다. 대신 그 자격은 화면에서 팀을 **고른다** — 자격이 팀을
+ * 지어내지 않는다는 규칙은 그대로다. `canPickTeam`이 그 한 판단이다.
  */
 export function canTouchSetlist(
-  role: Pick<Role, "role" | "team">,
+  role: Pick<Role, "role" | "team" | "anyTeam">,
   row: Pick<SetlistRow, "team_id">,
 ): boolean {
-  if (role.role === "owner") return true;
+  if (canPickTeam(role as Role)) return true;
   return !!role.team && role.team.id === row.team_id;
 }
 

@@ -49,20 +49,26 @@ export function PraiseLeaderShell() {
     return () => setAiArea('slides')
   }, [])
 
+  // 팀을 고르면 **그 팀이 서는 예배**를 다시 받아 온다. 고르기만 하고 예배 목록이 비어
+  // 있으면 이 화면은 팀을 물어 놓고 아무것도 못 하는 화면이 된다. 팀이 자격에 적힌
+  // 인도자에게는 teamId 가 빈 문자열이라 이 효과가 처음 한 번만 돈다.
   useEffect(() => {
     let alive = true
-    void Promise.all([getLeaderContext(), getMySetlists()])
+    void Promise.all([getLeaderContext(teamId || undefined), getMySetlists()])
       .then(([context, mine]) => {
         if (!alive) return
         setCtx(context)
         setSetlists(mine.setlists)
+        // 이끄는 예배가 하나뿐이면 묻지 않는다. 둘이면 서버가 고르지 못하므로 비워 두고
+        // 화면이 묻는다 — 임의로 고르면 1부 콘티가 2부에 앉고, 그 잘못은 올린 사람
+        // 눈에 보이지 않는다.
         setServiceId(context.defaultServiceId ?? (context.services.length === 1 ? context.services[0].id : ''))
       })
       .catch((e: Error) => alive && setError(e.message))
     return () => {
       alive = false
     }
-  }, [])
+  }, [teamId])
 
   const run = useCallback(
     async (file: File) => {
@@ -116,7 +122,7 @@ export function PraiseLeaderShell() {
 
         {error && <Notice kind="error">{error}</Notice>}
 
-        {ctx && ctx.services.length === 0 && !ctx.team && (
+        {ctx && !ctx.team && ctx.teams.length === 0 && (
           <Card title="팀">
             <Notice>
               이 계정에는 찬양팀이 없습니다. 관리자에게 팀 배정을 요청해 주세요.
@@ -124,8 +130,9 @@ export function PraiseLeaderShell() {
           </Card>
         )}
 
-        {/* 팀이 없는 자격은 소유자뿐이다. 그때만 고르는 자리가 뜬다 — 자격에 없는 팀을
-            화면이 지어내지 않는다. */}
+        {/* 팀이 없는 자격 — 소유자와 영역 비밀번호(kccp1980·kccpmedia·kccppraise)다.
+            그때만 고르는 자리가 뜬다: 자격에 없는 팀을 화면이 지어내지 않고, 자격에
+            있는 팀은 묻지 않는다. */}
         {ctx && !ctx.team && ctx.teams.length > 0 && (
           <Card title="팀" hint="이 계정에는 팀이 없어 고르셔야 합니다.">
             <Field label="찬양팀">

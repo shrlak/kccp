@@ -46,7 +46,13 @@ export function authHeaders(): Record<string, string> {
   const headers: Record<string, string> = { 'X-Device-Id': getDeviceId() }
   if (adminToken) headers['Authorization'] = `Bearer ${adminToken}`
   else if (adminPassword) headers['X-Admin-Password'] = adminPassword
-  if (adminToken && adminPartition) headers['X-Partition'] = adminPartition
+  // 고른 부(部)는 **토큰이든 비밀번호든** 실어 보낸다. 예전에는 토큰일 때만 보냈는데,
+  // 그때는 부를 고를 수 있는 자격이 구글 계정뿐이었기 때문이다. 지금은 영역 비밀번호도
+  // 고르므로(auth.ts PasswordGrant.crossPartition), 토큰 조건을 남겨 두면 그 비밀번호는
+  // 부를 고르고도 **언제나 기본 부만 보게 된다** — 고른 것이 아무 데도 닿지 않는, 화면만
+  // 바뀌는 실패다. 서버는 이 헤더를 여전히 요청으로만 읽는다: 고를 자격이 없는 자격에는
+  // 적용하지 않으므로, 장년부 비밀번호가 이것으로 대학·청년부를 열 수는 없다.
+  if (adminPartition) headers['X-Partition'] = adminPartition
   return headers
 }
 
@@ -168,8 +174,9 @@ export type AdminRole =
 
 // 합쳐진 앱의 영역. 'attend'는 지금까지의 관리자 패널, 'slides'는 ppt에서 들어온 예배
 // 슬라이드(미디어팀), 'praise'는 찬양팀 인도자가 콘티를 올리는 자리다. 어느 것을
-// 가졌는지는 자격이 정한다 — 비밀번호는 언제나 출석뿐이고, 나머지 둘은 구글 계정으로만
-// 열린다.
+// 가졌는지는 자격이 정한다. 출석 비밀번호 셋(kccpadmin·kccpwelcome·kccpadults)은
+// 출석뿐이고, 영역 비밀번호 셋(kccp1980·kccpmedia·kccppraise)과 구글 계정이 나머지 둘을
+// 연다 — 서버의 auth.ts `passwordGrant`가 그 표다.
 export type Area = 'attend' | 'slides' | 'praise'
 
 /** 이 로그인이 이끄는 찬양팀. 서버의 `LeaderTeam` 미러다. */
@@ -207,7 +214,8 @@ export interface AdminIdentity {
   // (auth.ts canViewLoginLog); gates the login-history section in the Admins tab.
   canViewLoginLog?: boolean
   // 이 로그인은 두 부를 다 볼 수 있다 — 로그인 뒤 어느 부의 패널로 들어갈지 고르고, 패널
-  // 안에서 언제든 건너갈 수 있다. 구글 로그인에만 붙는다 (auth.ts CROSS_PARTITION_EMAILS).
+  // 안에서 언제든 건너갈 수 있다. 붙는 길이 둘이다: 구글 계정(auth.ts
+  // CROSS_PARTITION_EMAILS)과 영역 비밀번호(PasswordGrant.crossPartition).
   canChoosePartition?: boolean
   // 찬양팀 인도자가 이끄는 팀 (`team_leaders`). 찬양 화면이 「어느 팀인가」를 **묻지
   // 않기 위한** 값이다 — 묻지 않는 것이 그 기능의 요점이다. 소유자는 영역은 있고 팀은

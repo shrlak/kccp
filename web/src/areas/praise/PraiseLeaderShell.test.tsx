@@ -5,6 +5,7 @@
 // 쪽으로 옮겨 갔을 뿐이다.
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { useAdminAuth } from '../../stores/useAdminAuth'
 import type { AdminIdentity } from '../../lib/api'
 import { PraiseLeaderShell } from './PraiseLeaderShell'
@@ -41,10 +42,18 @@ const ownerNoTeam: LeaderContext = {
   leader: { email: 'owner@example.com', name: '' },
 }
 
+// 팀을 고른 뒤 서버가 돌려주는 것 — 그 팀이 서는 예배가 채워져 있다.
+const afterPick: LeaderContext = {
+  ...ownerNoTeam,
+  services: [{ id: 'sv-3', name: '3부', startsAt: '14:00:00', partition: 'youth', leadsPpt: true }],
+  defaultServiceId: 'sv-3',
+}
+
 let context: LeaderContext = oneService
 
 vi.mock('./lib/conti', () => ({
-  getLeaderContext: () => Promise.resolve(context),
+  // 서버와 같은 규칙: teamId 를 주면 그 팀이 서는 예배를 돌려준다.
+  getLeaderContext: (teamId?: string) => Promise.resolve(teamId ? afterPick : context),
   getMySetlists: () => Promise.resolve({ setlists: [] }),
   uploadConti: vi.fn(),
   uploadDeck: vi.fn(),
@@ -105,5 +114,23 @@ describe('PraiseLeaderShell', () => {
 
     expect(await screen.findByText('이 계정에는 팀이 없어 고르셔야 합니다.')).toBeInTheDocument()
     expect(screen.getByRole('option', { name: '주랑 찬양팀' })).toBeInTheDocument()
+  })
+
+  it('팀을 고르면 그 팀이 서는 예배가 따라온다 — 묻기만 하고 못 올리면 화면이 아니다', async () => {
+    context = ownerNoTeam
+    const user = userEvent.setup()
+    render(<PraiseLeaderShell />)
+
+    // 고르기 전: 예배가 없으니 올릴 수도 없다.
+    const picker = await screen.findByRole('combobox')
+    expect(screen.getByRole('button', { name: '콘티 PDF 고르기' })).toBeDisabled()
+
+    await user.selectOptions(picker, 'team-ju')
+
+    // 고른 뒤: 그 팀이 서는 예배가 채워지고, 하나뿐이라 묻지 않는다.
+    expect(await screen.findByText('3부')).toBeInTheDocument()
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: '콘티 PDF 고르기' })).toBeEnabled(),
+    )
   })
 })

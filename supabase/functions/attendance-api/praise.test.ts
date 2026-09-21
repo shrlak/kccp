@@ -75,10 +75,10 @@ Deno.test("이끌지는 않지만 서는 예배가 하나뿐이면 그것이 기
   assertEquals(defaultService(choir)?.name, "2부");
 });
 
-const asRole = (over: Partial<Role>): Pick<Role, "role" | "team"> => ({
+const asRole = (over: Partial<Role>): Pick<Role, "role" | "team" | "anyTeam"> => ({
   role: "praise_leader",
   ...over,
-} as Pick<Role, "role" | "team">);
+} as Pick<Role, "role" | "team" | "anyTeam">);
 
 Deno.test("인도자는 자기 팀의 콘티만 만진다", () => {
   const mine = asRole({ team: hepzibah });
@@ -94,6 +94,17 @@ Deno.test("소유자는 예외다 — 잘못 앉은 콘티를 옮길 자격이 �
 
 Deno.test("최고관리자는 예외가 아니다 — 그 사람이 콘티를 다루는 자리는 슬라이드 영역이다", () => {
   assertEquals(canTouchSetlist(asRole({ role: "super_admin" }), { team_id: "team-hep" }), false);
+});
+
+Deno.test("팀 없는 영역 비밀번호는 아무 팀으로나 만진다 — 좁힐 팀이 없기 때문이다", () => {
+  // kccp1980 · kccpmedia · kccppraise 가 여기 앉는다. 공용 비밀번호는 사람을 가리키지
+  // 못해 팀도 가리키지 못하므로, 「자기 팀」으로 좁히면 그 화면은 아무것도 못 한다.
+  // 대가는 분명하다: 이 값을 아는 사람은 남의 팀 콘티도 연다.
+  const shared = asRole({ role: "praise_leader", anyTeam: true });
+  assertEquals(canTouchSetlist(shared, { team_id: "team-hep" }), true);
+  assertEquals(canTouchSetlist(shared, { team_id: "team-ju" }), true);
+  // 팀이 적힌 인도자에게는 붙지 않는 값이다 — 자격이 팀을 아는데 고르게 둘 이유가 없다.
+  assertEquals(canTouchSetlist(asRole({ team: hepzibah }), { team_id: "team-ju" }), false);
 });
 
 Deno.test("팀의 부와 예배의 부가 다르면 올리지 않는다", () => {

@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { ADULT_GROUP, ADULT_SCHEMA, canChoosePartition, canViewLoginLog, dbOf, inScope, inScopeGroup, partitionOfGroup, resolveAdmin, resolveIdentity, scopeFilter, type Partition, type Role, type Scope } from "./auth.ts";
+import { ADULT_GROUP, ADULT_SCHEMA, canChoosePartition, canPickTeam, canViewLoginLog, dbOf, inScope, inScopeGroup, partitionOfGroup, resolveAdmin, resolveIdentity, scopeFilter, type Partition, type Role, type Scope } from "./auth.ts";
 import { currentSeason, DEFAULT_SEMESTER_DATES, isSummerTerm, lastEndedTermKey, mergeSchedule, rollSchedule, sameSchedule, scheduleOf, scheduleToDates, subgroupSnapshot, trimHistory, validSchedule } from "./term.ts";
 import { availableCardModels, buildCardRequest, cardModelChain, hasGen3Options, parseCardResponse } from "./gemini.ts";
 import { csvUrl, matchPerson, mergeSheetMarks, nameCounts, normalizeMarks, parseAttendanceSheet, parseSheetUrl, sameMarks, type ParsedSheet } from "./sheetSync.ts";
@@ -2801,7 +2801,9 @@ Deno.serve(async (req: Request) => {
 
     // ── 찬양팀 인도자: 자기 팀의 콘티 ────────────────────────────────────────────────
     // 경로가 /api/praise/ 아래라 areaOf()가 'praise' 영역을 요구한다. 그 영역을 주는 것은
-    // `team_leaders` 의 줄 하나뿐이고(`praiseTeamOf`), 비밀번호로는 열리지 않는다.
+    // `team_leaders` 의 줄(`praiseTeamOf`)이거나, 영역 비밀번호 셋 중 하나다
+    // (kccp1980 · kccpmedia · kccppraise — `passwordGrant`). 앞의 것은 팀이 자격에
+    // 적혀 있어 묻지 않고, 뒤의 것은 팀이 없어 화면이 **묻는다**.
     //
     // **슬라이드 영역과 다른 점은 범위다.** 미디어팀은 자기 부(部)의 예배를 전부 보지만
     // 인도자는 **자기 팀**만 본다 — 팀 id는 자격(`role.team`)에서 오고, 요청 본문에서는
@@ -2812,11 +2814,18 @@ Deno.serve(async (req: Request) => {
       const role=await auth(); if(!role) return fail(401,"Unauthorized");
       const team=role.team??null;
       const {data:services}=await sb.from("services").select("*").eq("active",true).order("sort_order");
-      // 팀이 없는 자격은 소유자뿐이다 (auth.ts). 그 화면은 팀을 **묻는다** — 자격에 없는
-      // 팀을 자격이 지어내지 않는다.
+      // 팀이 없는 자격은 소유자와 영역 비밀번호다 (auth.ts canPickTeam). 그 화면은 팀을
+      // **묻는다** — 자격에 없는 팀을 자격이 지어내지 않는다.
       const teamless=!team;
       const {data:links}=await sb.from("team_services").select("*");
-      const mine=team?leaderServices((services||[]) as any,(links||[]) as any,team.id):[];
+      // 팀을 고른 뒤에는 **그 팀이 서는 예배**를 알아야 한다. 고르기만 하고 예배 목록이
+      // 비어 있으면 그 화면은 팀을 물어 놓고 아무것도 못 하는 화면이 된다 (실제로 그랬다:
+      // 소유자에게 팀 고르는 자리는 있었지만 services가 언제나 빈 배열이었다).
+      // `?teamId=`는 **요청이지 자격이 아니다** — 팀을 고를 수 있는 자격에서만 읽고,
+      // 쓰기는 여전히 canTouchSetlist/canUploadTo가 막는다.
+      const pickedId=teamless&&canPickTeam(role)?(url.searchParams.get("teamId")||""):"";
+      const forTeam=team?.id??pickedId;
+      const mine=forTeam?leaderServices((services||[]) as any,(links||[]) as any,forTeam):[];
       let teams:any[]=[];
       if(teamless){
         const {data:all}=await sb.from("teams").select("id,name,kind,partition").eq("active",true);
@@ -2835,7 +2844,8 @@ Deno.serve(async (req: Request) => {
     // 이 팀의 콘티들. 부(部)가 아니라 팀으로 좁힌다.
     if(req.method==="GET"&&p==="/api/praise/setlists") {
       const role=await auth(); if(!role) return fail(401,"Unauthorized");
-      if(!role.team&&role.role!=="owner") return fail(403,"Forbidden");
+      // 팀이 없는 자격(소유자·영역 비밀번호)은 전체를 본다 — 좁힐 팀이 없기 때문이다.
+      if(!role.team&&!canPickTeam(role)) return fail(403,"Forbidden");
       let q=sb.from("setlists").select("*").order("service_date",{ascending:false}).limit(50);
       if(role.team) q=q.eq("team_id",role.team.id);
       const {data:rows,error}=await q; if(error) return fail(500,error.message);
@@ -2854,9 +2864,9 @@ Deno.serve(async (req: Request) => {
     if(req.method==="POST"&&p==="/api/praise/conti") {
       const role=await auth(); if(!role) return fail(401,"Unauthorized");
       const {serviceId,serviceDate,fileName,teamId}=body||{};
-      // 소유자만 팀을 고를 수 있다 (팀이 없으므로). 인도자가 보낸 teamId는 무시한다 —
-      // 거절이 아니라 무시인 이유는, 화면이 무엇을 보내든 자격이 답이기 때문이다.
-      const team=role.team??(role.role==="owner"&&teamId
+      // 팀이 없는 자격만 팀을 고를 수 있다 (소유자·영역 비밀번호). 인도자가 보낸 teamId는
+      // 무시한다 — 거절이 아니라 무시인 이유는, 화면이 무엇을 보내든 자격이 답이기 때문이다.
+      const team=role.team??(canPickTeam(role)&&teamId
         ? await (async()=>{
             const {data:t}=await sb.from("teams").select("id,name,kind,partition").eq("id",teamId).eq("active",true).maybeSingle();
             return t?{id:t.id,name:t.name,kind:t.kind as "praise"|"choir",partition:t.partition as SlidePartition}:null;
