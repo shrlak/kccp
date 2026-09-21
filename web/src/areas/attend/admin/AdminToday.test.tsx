@@ -87,7 +87,11 @@ describe('AdminToday — 새가족 / 방문자 status labels in the 오늘 tab',
 
     expect(screen.getAllByText('새가족').length).toBeGreaterThan(0)
     expect(screen.getAllByText('방문자').length).toBeGreaterThan(0)
-    expect(screen.getByLabelText('상태 안내')).toBeInTheDocument()
+    // 색 점 범례(IconKey)는 걷었다. 이름표가 아이콘이 아니라 **글자**라 범례 없이 읽히고,
+    // 바로 위의 종류 칩이 같은 두 이름을 수와 함께 이미 적어 준다 — 한 화면에서 같은 말을
+    // 세 번 하고 있었다. 종류 칩이 그 자리를 대신하는지 여기서 붙잡는다.
+    expect(screen.getByRole('button', { name: '새가족 1' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '방문자 1' })).toBeInTheDocument()
   })
 
   it('marks only the 새가족 who registered today, not earlier newcomers', () => {

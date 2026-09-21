@@ -116,7 +116,6 @@ export function AdminSettings() {
       <section>
         <SectionHeader
           icon={<Calendar size={18} strokeWidth={2} aria-hidden />}
-          tone="bg-primary/10 text-primary"
           title={t('admin.settings.semesterDates')}
           desc={t('admin.settings.semesterDatesDesc', { count: terms.length })}
         />
@@ -172,7 +171,6 @@ export function AdminSettings() {
       <section>
         <SectionHeader
           icon={<Settings size={18} strokeWidth={2} aria-hidden />}
-          tone="bg-fill text-muted"
           title={t('admin.settings.modes')}
         />
         <div className="inset-list">
@@ -195,7 +193,6 @@ export function AdminSettings() {
       <section>
         <SectionHeader
           icon={<Sparkles size={18} strokeWidth={2} aria-hidden />}
-          tone="bg-gold/15 text-gold"
           title={t('admin.settings.groupColors')}
           desc={t('admin.settings.groupColorsDesc')}
         />
@@ -216,7 +213,6 @@ export function AdminSettings() {
       <section>
         <SectionHeader
           icon={<Link size={18} strokeWidth={2} aria-hidden />}
-          tone="bg-success/15 text-success"
           title={t('admin.sheetSync.title')}
           desc={t('admin.sheetSync.desc')}
         />
@@ -227,7 +223,6 @@ export function AdminSettings() {
       <section>
         <SectionHeader
           icon={<ScanLine size={18} strokeWidth={2} aria-hidden />}
-          tone="bg-info/10 text-info"
           title={t('admin.settings.cardScanLimit')}
           desc={t('admin.settings.cardScanLimitDesc')}
         />
@@ -260,14 +255,17 @@ export function AdminSettings() {
   )
 }
 
-function SectionHeader({ icon, tone, title, desc }: { icon: ReactNode; tone: string; title: string; desc?: string }) {
+// 설정의 각 단락 머리. 아이콘은 **제목 옆의 작은 표지**이지 그 단락의 색이 아니다 —
+// 예전에는 단락마다 다른 색으로 칠한 9×9 칩이었고(파랑·회색·금·초록·하늘), 그 다섯 색은
+// 아무것도 뜻하지 않으면서 화면에서 제목보다 컸다. 색은 뜻이 있을 때만 쓴다.
+function SectionHeader({ icon, title, desc }: { icon: ReactNode; title: string; desc?: string }) {
   return (
     <div className="mb-4">
-      <div className="flex items-center gap-2.5">
-        <span className={'grid h-9 w-9 shrink-0 place-items-center rounded-xl ' + tone}>{icon}</span>
-        <h2 className="font-display text-xl font-bold tracking-tight text-text">{title}</h2>
+      <div className="flex items-center gap-2 text-subtle">
+        <span className="shrink-0">{icon}</span>
+        <h2 className="font-display text-lg font-bold tracking-tight text-text sm:text-xl">{title}</h2>
       </div>
-      {desc && <p className="mt-2 text-sm text-muted">{desc}</p>}
+      {desc && <p className="mt-2 text-sm leading-6 text-muted">{desc}</p>}
     </div>
   )
 }
