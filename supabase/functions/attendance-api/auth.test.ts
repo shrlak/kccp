@@ -25,6 +25,10 @@ import {
   SUPER_PASSWORD,
   WELCOMING_PASSWORD,
   MASTER_PASSWORD,
+  ALL_PASSWORD,
+  MEDIA_PASSWORD,
+  PRAISE_PASSWORD,
+  canPickTeam,
   type Role,
   type Scope,
   areaOf,
@@ -451,8 +455,10 @@ Deno.test("공용 비밀번호는 셋 — 그 밖의 값은 전부 거절", asyn
 
 
 // ── 영역(Area) ─────────────────────────────────────────────────────────────
-// 합치면서 새로 생긴 규칙: 자격이 영역을 준다. 아래 테스트가 지키는 것은 두 문장이다 —
-// 비밀번호는 언제나 출석뿐이고, 슬라이드는 구글 계정으로만 열린다.
+// 합치면서 새로 생긴 규칙: **자격이 영역을 준다.** 아래 테스트가 지키는 것은 그 표가
+// 두 곳(passwordGrant · verifyAdminJwt)에만 있다는 것이고, 특히 **출석 비밀번호 셋은
+// 출석에서 자라지 않는다**는 것이다 — 명단은 사람의 정보라, 슬라이드를 쓰라고 준
+// 자격으로 열리면 기능이 아니라 유출이다.
 
 Deno.test("areaOf: 기본값은 attend — 규칙을 빠뜨린 라우트는 좁은 쪽으로 떨어진다", () => {
   assertEquals(areaOf("/api/admin/list"), "attend");
@@ -479,10 +485,13 @@ Deno.test("isOwner: 소유자 이메일은 설정에 살고 대소문자를 가�
   assertEquals(isOwner(""), false);
 });
 
-Deno.test("비밀번호는 셋 다 출석뿐이다 — 슬라이드를 여는 비밀번호는 없다", async () => {
+Deno.test("출석 비밀번호 셋은 그대로 출석뿐이다 — 영역 비밀번호가 생겨도 자라지 않는다", async () => {
   for (const pw of [SUPER_PASSWORD, WELCOMING_PASSWORD, ADULT_PASSWORD]) {
     const r = await verifyAdmin(mockSb({ devices: null }), "DEV-UNKNOWN-99", pw);
     assertEquals(r?.areas, ["attend"]);
+    // 부도 팀도 고르지 못한다 — 그 자격은 이미 부 하나를 뜻한다.
+    assertEquals(canChoosePartition(r), false);
+    assertEquals(canPickTeam(r), false);
   }
 });
 
@@ -581,8 +590,8 @@ Deno.test("`team_leaders` 에 줄이 없으면 아무것도 아니다 — 구글
   assertEquals(await verifyAdminJwt(mockSb({}, {}, "leader@example.com"), "jwt"), null);
 });
 
-Deno.test("비밀번호는 찬양 영역을 주지 않는다", () => {
-  for (const password of [SUPER_PASSWORD, WELCOMING_PASSWORD]) {
+Deno.test("출석 비밀번호는 찬양 영역을 주지 않는다 — 그쪽 문은 영역 비밀번호의 것이다", () => {
+  for (const password of [SUPER_PASSWORD, WELCOMING_PASSWORD, ADULT_PASSWORD]) {
     assertEquals(passwordGrant(password)?.areas, ["attend"]);
   }
 });
@@ -621,4 +630,89 @@ Deno.test("소유자는 양쪽 다 열린다", async () => {
   assertEquals((await resolveAdmin(sb, req("/api/slides/deck", auth)))?.areas, owned);
   // 찬양도 열린다 — 잘못 앉은 콘티를 옮길 자격이 하나는 있어야 한다 (praise.ts).
   assertEquals((await resolveAdmin(sb, req("/api/praise/me", auth)))?.areas, owned);
+});
+
+
+// ── 영역 비밀번호 셋 (kccp1980 · kccpmedia · kccppraise) ───────────────────
+// 원래 이 문은 구글 계정에만 열려 있었다. 여는 대가를 테스트로 적어 둔다: **무엇을 열고
+// 무엇을 못 여는지**가 여기 말고 다른 곳에 적혀 있으면, 다음에 비밀번호를 하나 더 만드는
+// 사람이 표를 두 벌 보게 된다.
+
+Deno.test("영역 비밀번호: 1980은 전부 · media는 슬라이드+콘티 · praise는 콘티", () => {
+  assertEquals(passwordGrant(ALL_PASSWORD), {
+    role: "super_admin",
+    partition: "youth",
+    areas: ["attend", "slides", "praise"],
+    crossPartition: true,
+    anyTeam: true,
+  });
+  assertEquals(passwordGrant(MEDIA_PASSWORD), {
+    role: "media",
+    partition: "youth",
+    areas: ["slides", "praise"],
+    crossPartition: true,
+    anyTeam: true,
+  });
+  // 콘티만. 부(部)는 팀이 정하므로 고를 것이 없다 — crossPartition이 없는 것이 의도다.
+  assertEquals(passwordGrant(PRAISE_PASSWORD), {
+    role: "praise_leader",
+    partition: "youth",
+    areas: ["praise"],
+    anyTeam: true,
+  });
+});
+
+Deno.test("영역 비밀번호로는 명단이 열리지 않는다 — 여는 것은 kccp1980 뿐이다", async () => {
+  const roster = (pw: string) =>
+    resolveAdmin(
+      mockSb({ devices: null }),
+      req("/api/admin/list", { "x-admin-password": pw, "x-device-id": "DEV-X" }),
+    );
+  // 막는 것은 화면이 아니라 여기다: 탭을 숨기는 것으로는 curl 한 번을 못 막는다.
+  assertEquals(await roster(MEDIA_PASSWORD), null);
+  assertEquals(await roster(PRAISE_PASSWORD), null);
+  assertEquals((await roster(ALL_PASSWORD))?.role, "super_admin");
+});
+
+Deno.test("출석 비밀번호는 X-Partition 을 읽지 않는다 — 읽으면 장년부 값이 대학·청년부를 연다", async () => {
+  const adult = await verifyAdmin(mockSb({ devices: null }), "DEV-X", ADULT_PASSWORD, "youth");
+  assertEquals(adult?.partition, "adult");
+  const youth = await verifyAdmin(mockSb({ devices: null }), "DEV-X", SUPER_PASSWORD, "adult");
+  assertEquals(youth?.partition, "youth");
+});
+
+Deno.test("영역 비밀번호는 부를 고른다 — 미디어팀 하나가 두 부의 슬라이드를 만드는 주가 있다", async () => {
+  const adult = await verifyAdmin(mockSb({ devices: null }), "DEV-X", MEDIA_PASSWORD, "adult");
+  assertEquals(adult?.partition, "adult");
+  assertEquals(canChoosePartition(adult), true);
+  // 고르지 않았으면 기본값 하나로 떨어진다 — 비어 있는 부는 없다.
+  assertEquals((await verifyAdmin(mockSb({ devices: null }), "DEV-X", MEDIA_PASSWORD, null))?.partition, "youth");
+});
+
+Deno.test("영역 비밀번호는 기기에 걸린 출석 역할을 물려받지 않는다", async () => {
+  // 최고관리자의 폰에서 kccpmedia 를 쳐도 자격은 미디어 그대로여야 한다. 물려받으면
+  // **역할은 넓고 영역은 좁은** 자격이 생기는데, 그 조합은 아무도 의도하지 않았고
+  // 화면에서는 "왜 탭이 없지"로만 보인다.
+  const sb = mockSb({ devices: { member_id: "m-1" }, member_roles: { role: "super_admin" } });
+  const r = await verifyAdmin(sb, "DEV-REAL-1", MEDIA_PASSWORD);
+  assertEquals(r?.role, "media");
+  assertEquals(r?.memberId, "");
+  // 출석 비밀번호는 여전히 물려받는다 — 그 길을 없앤 것이 아니다.
+  assertEquals((await verifyAdmin(sb, "DEV-REAL-1", SUPER_PASSWORD))?.memberId, "m-1");
+});
+
+Deno.test("canPickTeam: 팀이 없는 자격만 아무 팀으로나 일한다", async () => {
+  const withTeam: Role = {
+    ...leader,
+    role: "praise_leader",
+    areas: ["praise"],
+    team: { id: "team-ju", name: "주랑 찬양팀", kind: "praise", partition: "youth" },
+  };
+  // 인도자는 팀이 자격에 적혀 있다 — 고를 것이 없고, 고르게 두면 남의 팀이 열린다.
+  assertEquals(canPickTeam(withTeam), false);
+  assertEquals(canPickTeam({ ...leader, role: "owner" }), true);
+  assertEquals(canPickTeam(await verifyAdmin(mockSb({ devices: null }), "DEV-X", PRAISE_PASSWORD)), true);
+  assertEquals(canPickTeam(await verifyAdmin(mockSb({ devices: null }), "DEV-X", MEDIA_PASSWORD)), true);
+  assertEquals(canPickTeam(await verifyAdmin(mockSb({ devices: null }), "DEV-X", ALL_PASSWORD)), true);
+  assertEquals(canPickTeam(null), false);
 });

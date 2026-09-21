@@ -48,7 +48,15 @@ export interface LeaderContext {
   leader: { email: string; name: string }
 }
 
-export const getLeaderContext = () => api<LeaderContext>('GET', '/api/praise/me')
+/**
+ * 나는 누구이고 어디에 올리는가. 화면이 처음 묻는 한 가지다.
+ *
+ * `teamId`는 **팀이 없는 자격**(소유자·영역 비밀번호)이 팀을 고른 뒤에만 붙는다 — 그
+ * 팀이 서는 예배를 받아 오기 위해서다. 팀이 자격에 적힌 인도자에게는 붙지 않고, 붙여도
+ * 서버가 읽지 않는다 (자격이 언제나 답이다).
+ */
+export const getLeaderContext = (teamId?: string) =>
+  api<LeaderContext>('GET', teamId ? `/api/praise/me?teamId=${encodeURIComponent(teamId)}` : '/api/praise/me')
 
 export const getMySetlists = () => api<{ setlists: PraiseSetlist[] }>('GET', '/api/praise/setlists')
 

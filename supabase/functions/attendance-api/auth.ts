@@ -3,11 +3,16 @@
 // Two auth paths, tried in order by resolveAdmin():
 //   1. Google JWT (Bearer token): email → members.email → member_roles → role/scope.
 //   2. Break-glass: a shared team password alone — works on ANY device, registered or not.
-//      There are three passwords, each landing on a different dashboard:
+//      여섯이다. **출석 셋**은 명단을 열고, **영역 셋**은 주일 화면과 콘티를 연다:
 //        • SUPER_PASSWORD      → "super_admin" role (full panel: settings, admins, backup…)
 //        • WELCOMING_PASSWORD  → "welcoming"   role (새가족팀 dashboard, 대학·청년부만)
 //        • ADULT_PASSWORD      → "super_admin" role in the **장년부 partition** (see below)
-//      A device that happens to be linked to a roled member keeps that member's scope;
+//        • ALL_PASSWORD        → 영역 셋 전부 · 두 부 · 모든 팀 (소유자 이메일과 같은 크기)
+//        • MEDIA_PASSWORD      → 슬라이드(PPT) + 콘티. 명단에는 닿지 않는다
+//        • PRAISE_PASSWORD     → 콘티만
+//      표는 `passwordGrant` 하나다. 영역 셋의 대가는 거기 주석에 적어 두었다.
+//      A device that happens to be linked to a roled member keeps that member's scope
+//      — **출석 자격일 때만.** 영역 비밀번호는 member_roles를 보지 않는다 (verifyAdmin);
 //      otherwise the login gets the password's break-glass role. The two 대학·청년부
 //      passwords see that ministry's whole roster (a shared password can't pin to one
 //      동산); only SUPER_PASSWORD grants the super_admin powers (settings, admin
@@ -68,6 +73,24 @@ export const SUPER_PASSWORD = readEnv("SUPER_PASSWORD") ?? "kccpadmin";
 export const WELCOMING_PASSWORD =
   readEnv("WELCOMING_PASSWORD") ?? readEnv("MASTER_PASSWORD") ?? "kccpwelcome";
 export const ADULT_PASSWORD = readEnv("ADULT_PASSWORD") ?? "kccpadults";
+
+// ── 영역을 여는 비밀번호 셋 ───────────────────────────────────────────────────────────
+//  **이 셋은 위의 셋과 성질이 다르다.** 위의 셋은 명단(출석)을 열고, 이 셋은 주일 화면과
+//  AI 무료 한도를 연다. 원래 이 문은 구글 계정에만 열려 있었다 — 계정은 한 사람만 끊을
+//  수 있고 로그인 기록에 이름이 남기 때문이다. 비밀번호는 둘 다 못 한다: 바꾸면 그걸
+//  쓰던 모두가 한꺼번에 막히고, 누가 썼는지는 기록에 남지 않는다.
+//
+//  그럼에도 여는 이유는 운영이다 — 미디어팀·찬양팀은 매 학기 사람이 바뀌는데, 구글
+//  계정을 새 사람에게 넘기는 일은 배포할 수 있는 한 사람을 매번 거쳐야 한다. 대가는
+//  분명히 적어 둔다: **새면 회수하는 길은 이 값을 바꾸는 것뿐이고, 그러면 그 비밀번호를
+//  쓰던 모두가 함께 막힌다.** 새 학기마다 바꾸는 것이 그래서 기본값이어야 한다.
+//
+//    • ALL_PASSWORD    → 모든 영역 · 두 부(部) · 모든 팀. 소유자 이메일과 같은 크기다.
+//    • MEDIA_PASSWORD  → 슬라이드(PPT 생성) + 콘티. 부서 미디어팀 계정의 비밀번호 짝.
+//    • PRAISE_PASSWORD → 콘티만. 찬양팀이 올리는 자리.
+export const ALL_PASSWORD = readEnv("ALL_PASSWORD") ?? "kccp1980";
+export const MEDIA_PASSWORD = readEnv("MEDIA_PASSWORD") ?? "kccpmedia";
+export const PRAISE_PASSWORD = readEnv("PRAISE_PASSWORD") ?? "kccppraise";
 // Backwards-compat alias for the legacy single break-glass credential (now the welcoming
 // password). Kept so older references / env overrides keep working.
 export const MASTER_PASSWORD = WELCOMING_PASSWORD;
@@ -133,9 +156,14 @@ export function dbOf(sb: any, partition: Partition): any {
 
 // ── 영역(Area) ──────────────────────────────────────────────────────────────
 // 합쳐진 앱은 출석과 슬라이드를 함께 담는다. 무엇을 볼 수 있는지는 역할이 아니라
-// **자격**이 정한다: 공용 비밀번호는 언제나 출석뿐이고, 슬라이드는 구글 계정으로만
-// 들어간다. 주일 화면에 나가는 일과 AI 무료 한도를 쓰는 일은, 회수할 수 있고 로그인
-// 기록이 남는 자격 뒤에 있어야 하기 때문이다.
+// **자격**이 정한다. 자격마다 여는 영역이 다르고, 그 표는 `passwordGrant`(비밀번호)와
+// `verifyAdminJwt`(구글 계정) 두 곳뿐이다.
+//
+// 출석 비밀번호 셋(kccpadmin·kccpwelcome·kccpadults)은 **여전히 출석뿐이다.** 명단은
+// 사람의 정보라 영역을 넓혀 줄 이유가 없다 — 슬라이드를 쓰라고 준 비밀번호로 명단이
+// 열리면 그것은 기능이 아니라 유출이다. 반대로 영역 비밀번호 셋(kccp1980 제외)은
+// 명단에 닿지 않는다: `areas`에 'attend'가 없으면 resolveAdmin이 /api/admin/* 전부를
+// 거절한다.
 export type Area = "attend" | "slides" | "praise";
 
 // 라우트 접두사 → 필요한 영역. 기본값이 "attend"인 것이 안전 방향이다: 나중에 규칙을
@@ -186,28 +214,70 @@ export function mediaPartitionOf(email: string | null | undefined): Partition | 
   return MEDIA_ACCOUNTS.get(email.trim().toLowerCase()) ?? null;
 }
 
-// Map a typed password to the break-glass grant it confers, or null if it matches none.
-// Checked super → welcoming → adult so the higher-privilege match wins if two passwords
-// are (mis)configured identically. There is deliberately no 리더 password (see above) —
-// `kccpleaders` now matches nothing and is rejected like any other wrong password.
-export function passwordGrant(
-  password: string,
-): { role: "super_admin" | "leader" | "welcoming"; partition: Partition; areas: Area[] } | null {
+// 비밀번호 하나가 여는 것 전부. 넓은 것부터 견준다 — 두 값이 같게 설정되면 넓은 쪽이
+// 이겨야 한다(좁은 쪽이 이기면 "왜 안 열리지"가 되고, 그 답은 코드를 읽어야 나온다).
+// 리더 공용 비밀번호(kccpleaders)는 없앴다 — 위 주석 참조.
+export interface PasswordGrant {
+  role: "super_admin" | "leader" | "welcoming" | "media" | "praise_leader";
+  partition: Partition;
+  areas: Area[];
+  // 이 비밀번호는 부(部)를 **고른다.** 보통 비밀번호는 그 자체가 부를 뜻하지만(장년부
+  // 비밀번호 → 장년부), 영역 비밀번호는 부가 아니라 **일**을 뜻한다 — 미디어팀 하나가
+  // 두 부의 슬라이드를 만드는 주가 실제로 있다. 고르는 길은 구글 계정과 똑같다
+  // (X-Partition 헤더 → canChoosePartition).
+  crossPartition?: boolean;
+  // 이 자격에는 **자기 팀이 없고, 대신 아무 팀으로나 일한다.** `team_leaders`의 인도자는
+  // 팀이 자격에 적혀 있지만(그래서 묻지 않는다), 공용 비밀번호는 사람을 가리키지 못해
+  // 팀도 가리키지 못한다. 그래서 화면이 **묻고**, 서버는 고른 팀을 받아 준다 — 소유자와
+  // 같은 모양이다. 그 대가는 이 비밀번호를 아는 사람이 남의 팀 콘티도 열 수 있다는 것이고,
+  // 그것이 공용 비밀번호의 성질이다.
+  anyTeam?: boolean;
+}
+
+export function passwordGrant(password: string): PasswordGrant | null {
   if (!password) return null;
-  // 비밀번호는 언제나 출석뿐이다. 슬라이드를 여는 비밀번호는 만들지 않는다.
-  const areas: Area[] = ["attend"];
-  if (password === SUPER_PASSWORD) return { role: "super_admin", partition: "youth", areas };
+  const attend: Area[] = ["attend"];
+
+  // ── 영역 비밀번호 ──
+  // 모든 것을 여는 값. 소유자 이메일과 같은 크기라 가장 먼저 견준다.
+  if (password === ALL_PASSWORD) {
+    return {
+      role: "super_admin",
+      partition: "youth",
+      areas: ["attend", "slides", "praise"],
+      crossPartition: true,
+      anyTeam: true,
+    };
+  }
+  // 미디어팀: PPT를 만들고(slides) 그 재료인 콘티를 본다(praise). 출석은 없다.
+  if (password === MEDIA_PASSWORD) {
+    return {
+      role: "media",
+      partition: "youth",
+      areas: ["slides", "praise"],
+      crossPartition: true,
+      anyTeam: true,
+    };
+  }
+  // 찬양팀: 콘티만. 부(部)는 **팀이 정하므로** 여기서 고를 것이 없다 — 그래서
+  // crossPartition이 없다 (있으면 뜻 없는 물음이 하나 생긴다).
+  if (password === PRAISE_PASSWORD) {
+    return { role: "praise_leader", partition: "youth", areas: ["praise"], anyTeam: true };
+  }
+
+  // ── 출석 비밀번호 (그대로) ──
+  if (password === SUPER_PASSWORD) return { role: "super_admin", partition: "youth", areas: attend };
   // 새가족팀 공용 비밀번호는 대학·청년부의 것이다. 장년부에는 짝이 없다.
-  if (password === WELCOMING_PASSWORD) return { role: "welcoming", partition: "youth", areas };
+  if (password === WELCOMING_PASSWORD) return { role: "welcoming", partition: "youth", areas: attend };
   // 장년부 runs its own department end to end, so its shared password is a super_admin —
   // inside the 장년부 partition only. scopeFilter pins it to 장년부 regardless of role.
-  if (password === ADULT_PASSWORD) return { role: "super_admin", partition: "adult", areas };
+  if (password === ADULT_PASSWORD) return { role: "super_admin", partition: "adult", areas: attend };
   return null;
 }
 
 // The role a password grants, ignoring its partition. Kept as the narrow helper older
 // call sites (and tests) use; passwordGrant is the full answer.
-export function passwordRole(password: string): "super_admin" | "leader" | "welcoming" | null {
+export function passwordRole(password: string): PasswordGrant["role"] | null {
   return passwordGrant(password)?.role ?? null;
 }
 
@@ -256,6 +326,13 @@ export interface Role {
   // 이 자격이 들어갈 수 있는 영역. resolveAdmin이 라우트마다 검사한다 — 탭을 숨기는 것은
   // 화면일 뿐이고, 비밀번호는 bearer 자격이라 서버가 막지 않으면 curl 한 번에 뚫린다.
   areas: Area[];
+  // 이 자격은 부(部)를 고른다 — 영역 비밀번호가 그렇다 (PasswordGrant.crossPartition).
+  // 구글 계정 쪽의 짝은 CROSS_PARTITION_EMAILS이고, 둘을 합쳐 canChoosePartition()이
+  // 답한다. 없으면 이 자격의 부는 하나다.
+  crossPartition?: boolean;
+  // 이 자격에는 자기 팀이 없고 아무 팀으로나 일한다 (PasswordGrant.anyTeam).
+  // canPickTeam()이 이것과 소유자를 함께 답한다 — 두 곳에서 따로 물으면 한쪽이 뒤처진다.
+  anyTeam?: boolean;
   // 이 사람이 이끄는 찬양팀 — `team_leaders`에 줄이 있을 때만. 없는 것이 보통이다
   // (출석 쪽 자격에는 뜻이 없는 값이다). 소유자는 'praise' 영역을 갖되 팀이 없으므로,
   // 그 화면이 팀을 **묻는다** — 자격에 없는 팀을 자격이 지어내지 않는다.
@@ -357,7 +434,24 @@ export function canViewLoginLog(role: Role | null): boolean {
 // 로그인한 뒤 부를 고를 수 있는가 — 패널이 "어느 부로 들어갈까요" 화면을 띄울지 정하는 값.
 // 구글 로그인에만 해당한다 (비밀번호 로그인은 role.email이 비어 있다).
 export function canChoosePartition(role: Role | null): boolean {
-  return !!role && canCrossPartitions(role.email);
+  // 두 길이 있다: 구글 계정(CROSS_PARTITION_EMAILS)과 영역 비밀번호(crossPartition).
+  // 한 함수가 둘 다 답해야 호출부가 어느 길로 들어왔는지 몰라도 된다 — 지금 이 값을
+  // 읽는 곳이 슬라이드 라우트 여섯이고, 거기서 갈라지기 시작하면 한쪽이 뒤처진다.
+  return !!role && (role.crossPartition === true || canCrossPartitions(role.email));
+}
+
+/**
+ * 이 자격이 **아무 팀으로나** 콘티를 다룰 수 있는가.
+ *
+ * 인도자는 팀이 자격에 적혀 있어서(`role.team`) 이 물음이 필요 없다. 필요한 것은 팀이
+ * 없는 자격 — 소유자와 영역 비밀번호다. 그 둘은 화면에서 팀을 **고르고**, 서버는 고른
+ * 팀을 받아 준다.
+ *
+ * 한 곳에 두는 이유: 이 판단이 세 라우트(`/api/praise/setlists` · `/conti` · 콘티 한 줄
+ * 만지기)에 흩어져 있었고, 흩어진 판단은 새 자격이 생길 때 **한 곳만 고쳐진다.**
+ */
+export function canPickTeam(role: Role | null | undefined): boolean {
+  return !!role && (role.role === "owner" || role.anyTeam === true);
 }
 
 type SB = ReturnType<typeof createClient>;
@@ -369,14 +463,29 @@ type SB = ReturnType<typeof createClient>;
 // preserved; otherwise the login gets the role the password maps to (SUPER_PASSWORD →
 // "super_admin", WELCOMING_PASSWORD → "welcoming", ADULT_PASSWORD → "super_admin" in the
 // 장년부 partition). Returns null only when the password matches none of them.
-export async function verifyAdmin(sb: SB, deviceId: string, password: string): Promise<Role | null> {
+export async function verifyAdmin(
+  sb: SB,
+  deviceId: string,
+  password: string,
+  wanted?: Partition | null,
+): Promise<Role | null> {
   const grant = passwordGrant(password);
   if (!grant) return null;
-  if (isPersonalDevice(deviceId)) {
+  // 영역 비밀번호는 부를 **고른다** — X-Partition을 읽는다. 출석 비밀번호는 그 자체가
+  // 부를 뜻하므로 헤더를 보지 않는다 (보면 장년부 비밀번호로 대학·청년부가 열린다).
+  const partition = grant.crossPartition ? (readPartition(wanted ?? null) ?? grant.partition) : grant.partition;
+  const extra = {
+    ...(grant.crossPartition ? { crossPartition: true } : {}),
+    ...(grant.anyTeam ? { anyTeam: true } : {}),
+  };
+  // 기기에 걸린 역할을 물려받는 것은 **출석 자격일 때만** 뜻이 있다. member_roles는 출석
+  // 쪽 역할표라, 슬라이드·콘티만 여는 비밀번호가 거기서 super_admin을 주워 오면 역할은
+  // 넓어지고 영역은 그대로인 이상한 자격이 된다 — 그 조합은 아무도 의도하지 않았다.
+  if (grant.areas.includes("attend") && isPersonalDevice(deviceId)) {
     // Look only in the schema the typed password belongs to. That is what keeps a device's
     // stored grant from crossing departments: the 장년부 password on a 청년부 리더's phone
     // searches `adult.devices`, doesn't find them, and falls through to break-glass.
-    const db = dbOf(sb, grant.partition);
+    const db = dbOf(sb, partition);
     const { data: dev } = await db.from("devices").select("member_id").eq("id", deviceId).single();
     const memberId = (dev as { member_id?: string } | null)?.member_id;
     if (memberId) {
@@ -389,10 +498,11 @@ export async function verifyAdmin(sb: SB, deviceId: string, password: string): P
           group: row.group_name || "",
           subgroup: row.subgroup || "",
           ministry: row.ministry || "",
-          partition: grant.partition,
+          partition,
           email: "",
-          memberPartition: grant.partition,
+          memberPartition: partition,
           areas: grant.areas,
+          ...extra,
         };
       }
     }
@@ -408,10 +518,11 @@ export async function verifyAdmin(sb: SB, deviceId: string, password: string): P
     group: "",
     subgroup: "",
     ministry: "",
-    partition: grant.partition,
+    partition,
     email: "",
-    memberPartition: grant.partition,
+    memberPartition: partition,
     areas: grant.areas,
+    ...extra,
   };
 }
 
@@ -597,10 +708,11 @@ export async function praiseTeamOf(sb: SB, email: string): Promise<LeaderTeam | 
 // Unified resolver: try Google JWT first (Authorization: Bearer), fall back to
 // device + master password. All hardened admin endpoints call this.
 //
-// X-Partition is the panel's *request* for a 부, sent on every call once a cross-partition
-// admin has picked one. It is not a grant and cannot become one: verifyAdminJwt honors it
-// only for CROSS_PARTITION_EMAILS, and the password path ignores it outright (a password
-// already says which 부 it is).
+// X-Partition is the panel's *request* for a 부, sent on every call once a login that may
+// choose one has picked it. It is not a grant and cannot become one: verifyAdminJwt honors
+// it only for CROSS_PARTITION_EMAILS, and verifyAdmin only for a grant with
+// `crossPartition` (the 영역 비밀번호). **출석 비밀번호는 읽지도 않는다** — 그 값은 이미
+// 부 하나를 뜻하므로, 읽으면 장년부 비밀번호로 대학·청년부가 열린다.
 export async function resolveAdmin(sb: SB, req: Request): Promise<Role | null> {
   const role = await resolveIdentity(sb, req);
   if (!role) return null;
@@ -621,5 +733,12 @@ export async function resolveIdentity(sb: SB, req: Request): Promise<Role | null
     return verifyAdminJwt(sb, auth.slice(7), readPartition(req.headers.get("x-partition")));
   }
   const deviceId = req.headers.get("x-device-id") || req.headers.get("X-Device-Id") || "";
-  return verifyAdmin(sb, deviceId, req.headers.get("x-admin-password") || "");
+  // X-Partition은 여기서도 **요청일 뿐이다.** verifyAdmin이 grant.crossPartition인
+  // 비밀번호에만 적용한다 — 출석 비밀번호는 읽지도 않는다.
+  return verifyAdmin(
+    sb,
+    deviceId,
+    req.headers.get("x-admin-password") || "",
+    readPartition(req.headers.get("x-partition")),
+  );
 }
