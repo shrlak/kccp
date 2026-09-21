@@ -74,6 +74,27 @@ Repo → **Settings** → **Secrets and variables** → **Actions** → **New re
 | `R2_ACCESS_KEY_ID` | From step 2 |
 | `R2_SECRET_ACCESS_KEY` | From step 2 |
 
+## 4b. Check the five values before you paste them (recommended)
+
+```sh
+export PGPASSWORD='...'            # step 3
+export BACKUP_AGE_PUBLIC_KEY='age1...'
+export AGE_KEY_FILE="$HOME/Desktop/kccp-backup-key.txt"   # optional, but do it
+export R2_ENDPOINT='https://<account-id>.r2.cloudflarestorage.com'
+export AWS_ACCESS_KEY_ID='...'
+export AWS_SECRET_ACCESS_KEY='...'
+bash scripts/backup/preflight.sh
+```
+
+Runs entirely on your machine and sends nothing anywhere. It connects with the *same*
+host/user the workflow uses, confirms `backup_reader` actually reads rows (a role without
+`BYPASSRLS` sees zero — that would make a "successful" empty backup), encrypts with the
+public key **and decrypts again with the private one**, and checks the R2 token can write
+*and delete* (the prune step deletes; a Read-only token fails at the very last step).
+
+A failing GitHub run hides its values — correctly — so "which of the five is wrong" is
+hard to see there. This names it.
+
 ## 5. First run
 
 Actions tab → **Weekly Encrypted Backup** → **Run workflow**, once all five secrets above

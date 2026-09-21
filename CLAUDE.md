@@ -767,6 +767,15 @@ live** at https://shrlak.github.io/kccp/ (옛 주소 `/kccp-attendance/`는 죽�
   복원도 스키마 단위다 — 그 스키마의 표를 전부 `TRUNCATE ... RESTART IDENTITY CASCADE` 하고
   백업을 흘려 넣으므로, 시퀀스를 손으로 밀 필요가 없고 다른 부서는 어느 쪽으로도 닿지 않는다.
   **재해복구는 이제 두 파일 다 필요하다** — `backups/`만으로는 장년부가 복구되지 않는다.
+- **복원은 저장소의 마이그레이션 위로 흘러 들어간다.** `run-backup.sh` 는 ① `pg_dump
+  --data-only --column-inserts` 로 뜨고(INSERT 가 컬럼을 **이름으로** 지목한다) ②
+  **저장소 마이그레이션을 재생해** 검증용 스키마를 세운 뒤 ③ 그 덤프를 `ON_ERROR_STOP`
+  으로 흘려 넣는다. 그러므로 **prod 에만 있는 컬럼은 곧 복원 불가**다 — 백업은 초록으로
+  끝나고 정작 필요한 날 멈춘다. 실제로 그랬다: 엑셀에서 명단을 옮기던 작업이 prod 에
+  `members.new_member_since` · `config.edu_dongsan_date`(두 부)와 인덱스 열하나를
+  남겼는데 그 SQL 은 이 저장소에 없었다. `20260830_prod_schema_parity.sql` 이 그
+  **결과**를 떠 온 것이고(원본 SQL 은 되살릴 수 없다), 그 뒤로 컬럼·인덱스 지문이 prod 와
+  md5 까지 같다. 스키마를 prod 에서 직접 고쳤다면 **같은 날 저장소에도 적어라.**
 - **Edge function deploys via CI**, not MCP: `mcp__Supabase__deploy_edge_function` and
   `get_edge_function` are **permission-denied** in this environment. `.github/workflows/deploy.yml`
   runs `supabase functions deploy` when the `SUPABASE_ACCESS_TOKEN` repo secret is set (it is).
