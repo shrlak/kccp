@@ -1,6 +1,6 @@
 import { forwardRef, type ButtonHTMLAttributes } from 'react'
 
-type Variant = 'primary' | 'secondary' | 'ghost' | 'danger'
+type Variant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'dangerQuiet'
 type Size = 'md' | 'sm'
 
 const base =
@@ -20,6 +20,12 @@ const variants: Record<Variant, string> = {
     'hover:border-primary/30 hover:bg-surface-alt active:bg-surface-alt',
   // Text-weight action — used inline where a filled control would be too heavy.
   ghost: 'border border-transparent bg-transparent text-primary hover:bg-fill active:bg-fill-hover',
+  // Destructive, at rest. 되돌릴 수 없는 일이라고 해서 화면에서 가장 큰 목소리여야 하는
+  // 것은 아니다 — 목록 위에 꽉 찬 빨강을 두면 내보내기·일괄 출석과 같은 무게로 서면서
+  // 색만 더 세다. 빨강은 남기되(무엇인지 알아야 하므로) 칠은 확인 창의 버튼에 넘긴다.
+  dangerQuiet:
+    'border border-danger/30 bg-transparent text-danger ' +
+    'hover:border-danger/50 hover:bg-danger/[0.07] active:bg-danger/10',
   // Destructive filled.
   danger:
     'border border-transparent bg-danger text-white shadow-[var(--shadow-sm)] ' +

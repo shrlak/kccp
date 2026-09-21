@@ -11,9 +11,6 @@ import {
   exportSundays,
   semesterLabel,
   filterLabel,
-  HEADER_TOTAL_FILL,
-  KEY_FILL,
-  NOTE_FILL,
   type Lang,
 } from './exports'
 import { addBulkAttendance, clearAttendance, configCalendar, type LogEntry, type Member, type RosterResponse } from '../../../lib/api'
@@ -84,8 +81,8 @@ export function AdminSheet() {
 
   return (
     <>
-      <StatsBar stats={computeStats(members, fLog, today)} />
       <GroupFilter members={data.members} value={filter} onChange={setFilter} />
+      <StatsBar stats={computeStats(members, fLog, today)} />
       <div className="mb-3 flex flex-wrap items-center justify-end gap-2">
         <div className="flex flex-wrap gap-2">
           <ExportMenu members={members} log={fLog} filter={filter} />
@@ -96,7 +93,7 @@ export function AdminSheet() {
             </Button>
           )}
           {data.canClearAttendance && (
-            <Button variant="danger" size="sm" onClick={() => setClearing(true)}>
+            <Button variant="dangerQuiet" size="sm" onClick={() => setClearing(true)}>
               <Trash2 className="size-4" aria-hidden />
               {t('admin.sheet.clearAll.action')}
             </Button>
@@ -282,23 +279,30 @@ function BulkModal({ data, onClose }: { data: RosterResponse; onClose: () => voi
   )
 }
 
-// On-screen 출석부: an exact preview of the exported "Attendance" sheet. Members are split
-// into color-coded 동산 blocks (green → blue → yellow → red), each a single date-header row
-// over O = 출석 (green) / X = 결석 (red) cells — status marks (한국 귀국 / 이주 / 새가족 …)
-// render as grey cells spanning the dates they cover, like the master sheet — a per-member
-// 예배 총 출석 count and a 총 출석 totals row, opened by the KEY legend up top — see
-// exports.ts (gridSheet / reportHtml) for the shared spine. Date columns are the term's
-// worship Sundays. Each block lists its 동산지기 first, then 부동산지기, then the rest in
-// roster order, with the leaders' name cells bolded + highlighted (no icon).
-const CELL = 'whitespace-nowrap border border-[#b7b7b7] px-3 py-1.5'
+// On-screen 출석부. Members are split into 동산 blocks, each a single date-header row over
+// O = 출석 / X = 결석 cells — status marks (한국 귀국 / 이주 / 새가족 …) render as filled
+// cells spanning the dates they cover, like the master sheet — a per-member 예배 총 출석
+// count and a 총 출석 totals row. Date columns are the term's worship Sundays. Each block
+// lists its 동산지기 first, then 부동산지기, then the rest in roster order, with the
+// leaders' name cells bolded + highlighted (no icon).
+//
+// **구조는 내보내는 엑셀 그대로지만, 색은 앱의 것이다.** 예전에는 시트의 팔레트를 화면에
+// 그대로 옮겨 그렸다 — 초록 머리줄, 분홍 합계 열, 빨간 X, 회색 테두리. 두 가지가 걸렸다:
+// (1) 한 로그인 안의 다른 탭들과 다른 앱처럼 보였고, (2) 하드코딩된 흰 배경·검은 글자라
+// **다크 모드에서 검은 화면 위의 흰 판때기**가 됐다. 그래서 칠은 토큰으로 갈아입혔다.
+// 엑셀(exports.ts)은 그대로다 — 교회가 쓰는 원본 시트의 색이 거기 있어야 하기 때문이고,
+// 화면과 파일이 같아야 하는 것은 **무엇이 어디 적히는가**이지 무슨 색인가가 아니다.
+// 블록의 색 갈래(blockColors)만은 남겨서, 인쇄한 시트와 화면의 같은 동산이 같은 색을 갖는다.
+const CELL = 'whitespace-nowrap border border-separator px-3 py-1.5'
 // Variable-length cells (names, status notes) truncate instead of stretching their
 // column, so every 동산 block's table keeps the same fixed-layout width.
 const CLIP = 'overflow-hidden text-ellipsis'
 // The 이름 column is pinned to the left edge of the horizontal scroll. `border-collapse`
 // doesn't repaint a sticky cell's own right border reliably, so the column's separating
 // edge is drawn as a box-shadow instead.
-const STICKY_NAME = 'sticky left-0 z-[1] shadow-[1px_0_0_#b7b7b7]'
-const DARK = '#1f2937'
+const STICKY_NAME = 'sticky left-0 z-[1] bg-surface shadow-[1px_0_0_var(--separator)]'
+// 머리줄·합계줄처럼 내용이 아니라 **틀**인 칸. 눈이 먼저 가야 하는 것은 O/X 쪽이다.
+const CHROME = 'bg-surface-alt text-muted'
 
 // Fixed column widths (px), shared by every 동산 block so all tables end up the exact
 // same overall width regardless of name/label lengths: 이름 · 예배 총 출석 · one per date.
@@ -355,8 +359,6 @@ function GridView({
     dongsanLog,
   )
   const hasDongsan = dongsanLog.length > 0
-  const pink = cssColor(HEADER_TOTAL_FILL)
-  const grey = cssColor(NOTE_FILL)
 
   if (model.sections.length === 0) return <p className="text-sm text-muted">{L.empty}</p>
 
@@ -365,47 +367,48 @@ function GridView({
       <p className="mb-3 text-sm text-muted">
         {semesterLabel(today, lang, semesterDates, partition)} · {filterLabel(filter.group, filter.subgroup, lang)}
       </p>
-      {/* Legend text uses theme tokens so it stays readable in dark mode; only the
-          swatches keep the sheet's hardcoded paper palette. */}
-      <div className="mb-3 flex flex-wrap items-center gap-4 text-sm text-muted">
-        <b className="rounded px-2.5 py-0.5 text-white" style={{ background: cssColor(KEY_FILL) }}>{L.key}</b>
-        <span><b>O</b> {L.present}</span>
-        <span><b>X</b> {L.absent}</span>
+      {/* 범례는 표를 읽는 법이지 표가 아니다 — 예전에는 'KEY'가 청록 알약으로 화면에서
+          가장 센 요소였다. 이제 한 줄의 작은 글씨로 내려오고, 칠은 칸에 쓰는 것과 똑같은
+          토큰이라 화면에서 본 색을 범례에서 그대로 찾을 수 있다. */}
+      <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-subtle">
+        <span className="inline-flex items-center gap-1.5"><b className="text-success">O</b> {L.present}</span>
+        <span className="inline-flex items-center gap-1.5"><b className="text-muted">X</b> {L.absent}</span>
         <span className="inline-flex items-center gap-1.5">
-          <span className="inline-block h-3.5 w-5 rounded-sm" style={{ background: grey }} />
+          <span className="inline-block h-3 w-4 rounded-[3px] bg-fill" />
           {L.etc}
         </span>
         {/* 동산모임 표시는 시트 연동이 붙은 뒤에만 칸에 나타나므로, 범례도 그때만 보여준다. */}
         {hasDongsan && (
           <span className="inline-flex items-center gap-1">
-            <b>O</b><sup className="text-[9px] font-bold opacity-70">O</sup>
+            <b className="text-success">O</b><sup className="text-[9px] font-bold opacity-70">O</sup>
             <span className="ml-0.5">{L.dongsanMeeting}</span>
           </span>
         )}
         <span className="inline-flex items-center gap-1.5">
-          <span className="inline-block h-3.5 w-5 rounded-sm" style={{ background: '#FFF3C4' }} />
-          <b>{L.leaderKey}</b>
+          <span className="inline-block h-3 w-4 rounded-[3px] bg-gold/25" />
+          {L.leaderKey}
         </span>
         <span className="inline-flex items-center gap-1.5">
-          <span className="inline-block h-3.5 w-5 rounded-sm" style={{ background: '#FFF9E1' }} />
-          <b>{L.subleaderKey}</b>
+          <span className="inline-block h-3 w-4 rounded-[3px] bg-gold/10" />
+          {L.subleaderKey}
         </span>
       </div>
       {/* Only the tables scroll sideways — the caption and legend above stay put, where
           before they were dragged along inside the scroll area and slid off screen on a
           phone. The 이름 column is pinned so a row stays identifiable once the Sunday
           columns are scrolled past it. */}
-      <div className="scroll-x flex flex-col gap-6 text-sm" style={{ color: DARK }}>
+      <div className="scroll-x flex flex-col gap-7 text-sm text-text">
         {model.sections.map((s, si) => {
-          const { light: lightArgb, medium: mediumArgb } = blockColors(si)
-          const light = cssColor(lightArgb)
-          const medium = cssColor(mediumArgb)
+          // 블록의 색은 이제 제목 앞의 작은 점 하나로만 남는다 — 같은 동산을 인쇄한 시트와
+          // 화면에서 같은 색으로 알아보되, 표를 칠하지는 않는다.
+          const dot = cssColor(blockColors(si).medium)
           return (
             <section key={s.subgroup} className="w-max">
-              <h3 className="mb-1.5 inline-block rounded px-3 py-1 text-base font-bold" style={{ background: medium, color: DARK }}>
+              <h3 className="mb-2 flex items-center gap-2 text-sm font-bold tracking-tight text-text">
+                <span className="size-2 shrink-0 rounded-full" style={{ background: dot }} aria-hidden />
                 {s.subgroup}
               </h3>
-              <table className="table-fixed border-collapse bg-white" style={{ width: tableWidth(model.dateLabels.length) }}>
+              <table className="table-fixed border-collapse bg-surface" style={{ width: tableWidth(model.dateLabels.length) }}>
                 <colgroup>
                   <col style={{ width: NAME_COL }} />
                   <col style={{ width: TOTAL_COL }} />
@@ -415,10 +418,10 @@ function GridView({
                 </colgroup>
                 <thead>
                   <tr>
-                    <th className={`${CELL} ${CLIP} ${STICKY_NAME} text-left font-bold`} style={{ background: light }}>{L.name}</th>
-                    <th className={`${CELL} text-center font-bold`} style={{ background: pink }}>{L.memberTotal}</th>
+                    <th className={`${CELL} ${CLIP} sticky left-0 z-[1] ${CHROME} shadow-[1px_0_0_var(--separator)] text-left font-semibold`}>{L.name}</th>
+                    <th className={`${CELL} ${CHROME} text-center font-semibold`}>{L.memberTotal}</th>
                     {model.dateLabels.map((d) => (
-                      <th key={d} className={`${CELL} text-center font-bold`} style={{ background: medium }}>{d}</th>
+                      <th key={d} className={`${CELL} ${CHROME} text-center font-semibold tabular-nums`}>{d}</th>
                     ))}
                   </tr>
                 </thead>
@@ -428,36 +431,39 @@ function GridView({
                     return (
                     <tr key={r.member.id}>
                       {role ? (
-                        // 동산지기 / 부동산지기: bold, warm-highlighted name cell (no icon). The
-                        // grid is fixed light-scheme (hex fills) like the export, so hardcoded
-                        // hex highlights are consistent here.
+                        // 동산지기 / 부동산지기: bold, warm-highlighted name cell (no icon).
                         <td
-                          className={`${CELL} ${CLIP} ${STICKY_NAME} text-left font-bold`}
-                          style={{ background: role === '동산지기' ? '#FFF3C4' : '#FFF9E1' }}
+                          className={
+                            `${CELL} ${CLIP} ${STICKY_NAME} text-left font-bold ` +
+                            (role === '동산지기' ? 'bg-gold/25' : 'bg-gold/10')
+                          }
                         >
                           {r.member.name}
                         </td>
                       ) : (
-                        <td className={`${CELL} ${CLIP} ${STICKY_NAME} bg-white text-left font-medium`}>{r.member.name}</td>
+                        <td className={`${CELL} ${CLIP} ${STICKY_NAME} text-left font-medium`}>{r.member.name}</td>
                       )}
-                      <td className={`${CELL} bg-white text-center font-bold`}>{r.total}</td>
+                      <td className={`${CELL} bg-surface-2 text-center font-bold tabular-nums`}>{r.total}</td>
                       {r.marks.map((c, di) => {
                         const d = model.dates[di]
                         // Status marks: one grey cell spanning the covered dates (master-sheet style).
                         if (c.kind === 'note')
                           return (
-                            <td key={d} colSpan={c.span} className={`${CELL} ${CLIP} text-center`} style={{ background: grey }}>
+                            <td key={d} colSpan={c.span} className={`${CELL} ${CLIP} bg-fill text-center text-xs text-muted`}>
                               {c.note}
                             </td>
                           )
                         if (c.kind === 'inNote') return null
                         // Pre-등록일자, upcoming Sundays and not-yet-entered dates render blank.
-                        if (c.kind === 'blank') return <td key={d} className={`${CELL} bg-white`} />
+                        if (c.kind === 'blank') return <td key={d} className={CELL} />
                         const here = c.kind === 'present'
                         return (
+                          // 결석을 빨갛게 칠하지 않는다. 한 표에 수백 번 나오는 글자라 빨강이면
+                          // 표 전체가 오류 목록처럼 읽히는데, 주일 한 번 못 온 것은 오류가
+                          // 아니다. 눈에 띄어야 하는 것은 **온 날**이고, 색은 거기 하나면 된다.
                           <td
                             key={d}
-                            className={`${CELL} bg-white text-center ${here ? 'font-bold text-[#16a34a]' : 'text-[#dc2626]'}`}
+                            className={`${CELL} text-center ${here ? 'font-bold text-success' : 'text-subtle'}`}
                           >
                             {here ? 'O' : 'X'}
                             {/* 동산모임은 예배와 다른 사실이라 같은 칸에 작게 덧붙는다 —
@@ -465,7 +471,7 @@ function GridView({
                                 아무도 적지 않았으면 아무것도 붙지 않는다. */}
                             {c.dongsan && (
                               <sup
-                                className={`ml-0.5 text-[9px] font-bold ${c.dongsan === 'present' ? 'text-[#16a34a]' : 'text-[#dc2626]'} opacity-70`}
+                                className={`ml-0.5 text-[9px] font-bold ${c.dongsan === 'present' ? 'text-success' : 'text-subtle'} opacity-80`}
                                 title={L.dongsanMeeting}
                               >
                                 {c.dongsan === 'present' ? 'O' : 'X'}
@@ -480,9 +486,9 @@ function GridView({
                 </tbody>
                 <tfoot>
                   <tr>
-                    <td colSpan={2} className={`${CELL} ${STICKY_NAME} text-left font-bold`} style={{ background: medium }}>{L.total}</td>
+                    <td colSpan={2} className={`${CELL} sticky left-0 z-[1] ${CHROME} shadow-[1px_0_0_var(--separator)] text-left font-semibold text-text`}>{L.total}</td>
                     {model.dates.map((d, i) => (
-                      <td key={d} className={`${CELL} bg-white text-center font-bold`}>
+                      <td key={d} className={`${CELL} ${CHROME} text-center font-bold tabular-nums text-text`}>
                         {s.totals[i]}
                       </td>
                     ))}

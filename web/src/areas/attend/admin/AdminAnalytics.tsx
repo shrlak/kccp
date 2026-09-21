@@ -19,8 +19,9 @@ import {
 } from './analytics'
 import { semesterBounds } from './newFamily'
 import { Button } from '../../../components/ui/Button'
+import { StatTile } from './StatsBar'
 import { useToast } from '../../../components/ui/Toast'
-import { GraduationCap, Calendar, ListChecks, Copy, BarChart3, Sprout, UserPlus, CalendarCheck, Heart, type LucideIcon } from '../../../components/ui/Icon'
+import { GraduationCap, Calendar, ListChecks, Copy, BarChart3, Sprout } from '../../../components/ui/Icon'
 import { configCalendar, type Member, type LogEntry } from '../../../lib/api'
 import { usePartition, usePartitionT, useAppConfig } from '../../../lib/useAppConfig'
 import { easternNow } from '../../../lib/checkinWindow'
@@ -46,7 +47,7 @@ export function AdminAnalytics() {
     <>
       <GroupFilter members={data.members} value={filter} onChange={setFilter} />
       <AnalyticsCharts members={members} log={log} />
-      <div className="fx-rise grid grid-cols-1 gap-4 lg:grid-cols-3">
+      <div className="fx-rise grid grid-cols-1 items-start gap-4 lg:grid-cols-3">
         <SemesterTable members={members} log={log} />
         <MonthlyTable members={members} log={log} />
         <WeeklyRecap log={log} />
@@ -76,7 +77,7 @@ function NewFamilySection({ members, log }: { members: Member[]; log: LogEntry[]
   return (
     <section className="fx-rise mt-6">
       <header className="mb-4 flex items-center gap-2">
-        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
+        <span className="shrink-0 text-subtle">
           <Sprout size={16} strokeWidth={2} aria-hidden />
         </span>
         <h2 className="font-display text-lg font-bold tracking-tight text-text">{t('admin.newfamily.title')}</h2>
@@ -108,31 +109,23 @@ function NewFamilySection({ members, log }: { members: Member[]; log: LogEntry[]
 function NewFamilyTiles({ totals, showEdu }: { totals: NewFamilyTotals; showEdu: boolean }) {
   // 장년부에는 학기가 없어 "이번 학기 등록"이 "이번 반기 등록"이 된다 (nfThisTerm_adult).
   const t = usePartitionT()
-  const items: { key: string; label: string; value: number; hint?: string; icon: LucideIcon }[] = [
-    { key: 'total', label: t('admin.analytics.nfTotal'), value: totals.total, icon: Sprout },
-    { key: 'term', label: t('admin.analytics.nfThisTerm'), value: totals.thisTerm, icon: UserPlus },
+  const items: { key: string; label: string; value: number; hint?: string }[] = [
+    { key: 'total', label: t('admin.analytics.nfTotal'), value: totals.total },
+    { key: 'term', label: t('admin.analytics.nfThisTerm'), value: totals.thisTerm },
     {
       key: 'recent',
       label: t('admin.analytics.nfRecent', { n: RECENT_WEEKS }),
       value: totals.recent,
       // 기록이 4주일보다 적으면 라벨의 "4주"가 거짓말이 되므로 실제로 센 주일 수를 적는다.
       hint: totals.recentWeeks < RECENT_WEEKS ? t('admin.analytics.nfWeeksCounted', { n: totals.recentWeeks }) : undefined,
-      icon: CalendarCheck,
     },
   ]
-  if (showEdu) items.push({ key: 'edu', label: t('admin.analytics.nfEduDone'), value: totals.eduDone, icon: Heart })
+  if (showEdu) items.push({ key: 'edu', label: t('admin.analytics.nfEduDone'), value: totals.eduDone })
 
   return (
     <div className="mb-5 grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-4">
-      {items.map(({ key, label, value, hint, icon: Icon }) => (
-        <div key={key} className="surface-panel flex flex-col p-4 sm:p-5">
-          <span className="mb-3 grid size-8 place-items-center rounded-full bg-fill text-muted">
-            <Icon className="size-4" strokeWidth={2} aria-hidden />
-          </span>
-          <div className="font-display text-3xl font-bold tabular-nums tracking-tight text-text sm:text-4xl">{value}</div>
-          <div className="section-kicker mt-1 leading-4">{label}</div>
-          {hint && <div className="mt-1 text-[11px] leading-4 text-subtle">{hint}</div>}
-        </div>
+      {items.map(({ key, label, value, hint }) => (
+        <StatTile key={key} label={label} value={value} hint={hint} />
       ))}
     </div>
   )
@@ -281,8 +274,8 @@ function SummaryTable({ head, rows }: { head: string[]; rows: { key: string; cel
 function Section({ title, icon, action, children }: { title: string; icon?: ReactNode; action?: ReactNode; children: ReactNode }) {
   return (
     <section className="surface-panel p-5">
-      <div className="mb-4 flex items-center gap-2 border-b border-border pb-3">
-        {icon && <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">{icon}</span>}
+      <div className="mb-4 flex items-center gap-2 border-b border-separator pb-3">
+        {icon && <span className="shrink-0 text-subtle">{icon}</span>}
         <h3 className="font-display text-base font-bold tracking-tight text-text">{title}</h3>
         {action && <span className="ml-auto">{action}</span>}
       </div>

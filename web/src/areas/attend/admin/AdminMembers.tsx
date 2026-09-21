@@ -17,7 +17,7 @@ import { easternNow } from '../../../lib/checkinWindow'
 import { noteOn } from '../../../lib/status'
 import { IconKey } from './IconKey'
 import { EditModal, AttendanceModal, Field } from './MemberDialogs'
-import { resolveGroupColor, hexTint } from './groupColors'
+import { resolveGroupColor } from './groupColors'
 import { refreshRoster } from '../../../lib/live'
 import { useAppConfig, usePartitionT } from '../../../lib/useAppConfig'
 
@@ -47,7 +47,7 @@ export function AdminMembers() {
   if (isLoading) return (
     <div className="fx-fade space-y-6">
       <div className="fx-skeleton h-11 rounded-xl" />
-      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8">
+      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
         {Array.from({ length: 12 }).map((_, i) => <div key={i} className="fx-skeleton h-20 rounded-2xl" />)}
       </div>
     </div>
@@ -203,7 +203,7 @@ export function AdminMembers() {
             </>
           )}
           {data.role !== 'pastor' && (
-            <Button size="sm" variant="danger" disabled={selected.size === 0 || bulkBusy} onClick={() => setConfirmBulkDelete(true)}>
+            <Button size="sm" variant="dangerQuiet" disabled={selected.size === 0 || bulkBusy} onClick={() => setConfirmBulkDelete(true)}>
               <Trash2 className="size-4" aria-hidden />
               {t('admin.members.bulkDelete.action')}
             </Button>
@@ -219,16 +219,18 @@ export function AdminMembers() {
       )}
       <IconKey items={['newMemberStar', 'eduWeek1', 'eduWeek2']} />
       {sections.map(({ group, list }) => {
-        // 대학부/청년부 cards get a faint per-부서 tint (configurable in 관리자 › 설정);
-        // every other section (EM, staff-ish groups, no 부서) stays the plain surface.
-        const tint = group === '대학부' || group === '청년부' ? hexTint(resolveGroupColor(cfg?.groupColors, group), 0.07) : undefined
+        // 부서 색(관리자 › 설정)은 카드 **왼쪽 띠**로 들어간다. 예전에는 카드 전체를 옅게
+        // 칠했는데, 명단은 한 화면에 수십 장이 깔리는 자리라 그 옅은 색이 화면의 바탕색이
+        // 되어 버렸다 — 파스텔 판 위의 글자는 대비가 낮고, 부서가 둘이면 화면이 둘로
+        // 갈린 것처럼 보인다. 띠 하나면 부서는 그대로 알아보면서 글자는 흰 바탕에 앉는다.
+        const accent = group === '대학부' || group === '청년부' ? resolveGroupColor(cfg?.groupColors, group) : undefined
         return (
         <section key={group || 'none'} className="mb-8 fx-rise">
           <h3 className="mb-3 flex items-center gap-2 border-b border-separator pb-2.5 font-display text-lg font-bold tracking-tight text-text">
             {group || '—'}
             <span className="rounded-full bg-fill px-2 py-0.5 text-xs font-semibold tabular-nums text-muted">{list.length}</span>
           </h3>
-          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8">
+          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
             {list.map((m) => {
               const sel = selectMode && selected.has(m.id)
               return (
@@ -236,13 +238,19 @@ export function AdminMembers() {
                   key={m.id}
                   type="button"
                   onClick={() => (selectMode ? toggleSel(m.id) : setEditing(m))}
-                  style={sel ? undefined : { background: tint }}
                   className={
-                    'min-h-20 rounded-2xl border p-3.5 text-left shadow-[var(--shadow-sm)] transition-[background-color,border-color,box-shadow,transform] duration-200 [transition-timing-function:var(--ease-out-soft)] ' +
+                    'relative flex h-full min-h-20 flex-col overflow-hidden rounded-2xl border bg-surface p-3.5 pl-4 text-left shadow-[var(--shadow-sm)] transition-[background-color,border-color,box-shadow,transform] duration-200 [transition-timing-function:var(--ease-out-soft)] ' +
                     'hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-[var(--shadow)] active:translate-y-0 ' +
-                    (sel ? 'border-primary bg-surface ring-2 ring-primary/40' : 'border-border' + (tint ? '' : ' bg-surface'))
+                    (sel ? 'border-primary ring-2 ring-primary/40' : 'border-border')
                   }
                 >
+                  {accent && !sel && (
+                    <span
+                      aria-hidden
+                      className="absolute inset-y-0 left-0 w-[3px]"
+                      style={{ background: accent }}
+                    />
+                  )}
                   <div className="leading-snug">
                     {selectMode && (
                       <span className={'mr-2 inline-grid h-4 w-4 place-items-center rounded-full align-middle text-[10px] font-bold ' + (sel ? 'bg-primary text-primary-fg' : 'border border-border text-transparent')}>
@@ -277,8 +285,8 @@ export function AdminMembers() {
                       </>
                     )}
                   </div>
-                  <div className="mt-1 text-xs text-muted">{[m.group_name, m.subgroup].filter(Boolean).join(' · ') || '—'}</div>
-                  {m.member_role && <div className="mt-1 text-[11px] font-medium text-subtle">{m.member_role}</div>}
+                  <div className="mt-auto pt-1.5 truncate text-xs text-muted">{[m.group_name, m.subgroup].filter(Boolean).join(' · ') || '—'}</div>
+                  {m.member_role && <div className="mt-1 truncate text-[11px] font-medium text-subtle">{m.member_role}</div>}
                 </button>
               )
             })}
@@ -301,7 +309,7 @@ export function AdminMembers() {
           {showHidden && (
             <>
               <p className="mt-2 text-xs text-muted">{t('admin.members.hidden.desc')}</p>
-              <div className="mt-3 grid grid-cols-2 gap-2.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8">
+              <div className="mt-3 grid grid-cols-2 gap-2.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
                 {hiddenMembers.map((m) => {
                   const sel = selectMode && selected.has(m.id)
                   return (
@@ -310,7 +318,7 @@ export function AdminMembers() {
                       type="button"
                       onClick={() => (selectMode ? toggleSel(m.id) : setEditing(m))}
                       className={
-                        'min-h-20 rounded-2xl border p-3.5 text-left shadow-[var(--shadow-sm)] transition-[background-color,border-color,box-shadow,transform,opacity] duration-200 [transition-timing-function:var(--ease-out-soft)] hover:-translate-y-0.5 hover:border-primary/30 hover:opacity-100 hover:shadow-[var(--shadow)] active:translate-y-0 ' +
+                        'flex h-full min-h-20 flex-col rounded-2xl border p-3.5 text-left shadow-[var(--shadow-sm)] transition-[background-color,border-color,box-shadow,transform,opacity] duration-200 [transition-timing-function:var(--ease-out-soft)] hover:-translate-y-0.5 hover:border-primary/30 hover:opacity-100 hover:shadow-[var(--shadow)] active:translate-y-0 ' +
                         (sel ? 'border-primary bg-surface ring-2 ring-primary/40' : 'border-border bg-surface-2 opacity-80')
                       }
                     >
@@ -322,8 +330,8 @@ export function AdminMembers() {
                         )}
                         <span className="break-words text-base font-semibold text-text">{m.name}</span>
                       </div>
-                      <div className="mt-1 text-xs text-muted">{m.group_name || '—'}</div>
-                      <span className="mt-1.5 inline-block whitespace-nowrap rounded-full bg-warning/12 px-2 py-0.5 text-[10px] font-semibold text-warning">
+                      <div className="mt-auto pt-1.5 truncate text-xs text-muted">{m.group_name || '—'}</div>
+                      <span className="mt-1.5 self-start whitespace-nowrap rounded-full bg-warning/12 px-2 py-0.5 text-[10px] font-semibold text-warning">
                         {noteOn(m, today) ?? ''}
                       </span>
                     </button>
@@ -340,16 +348,16 @@ export function AdminMembers() {
             {t('admin.members.staffSection')}
             <span className="rounded-full bg-fill px-2 py-0.5 text-[11px] font-semibold tabular-nums text-muted">{staffMembers.length}</span>
           </div>
-          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8">
+          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
             {staffMembers.map((m) => (
               <button
                 key={m.id}
                 type="button"
                 onClick={() => setEditing(m)}
-                className="min-h-20 rounded-2xl border border-border bg-surface p-3.5 text-left shadow-[var(--shadow-sm)] transition-[background-color,border-color,box-shadow,transform] duration-200 [transition-timing-function:var(--ease-out-soft)] hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-[var(--shadow)] active:translate-y-0"
+                className="flex h-full min-h-20 flex-col rounded-2xl border border-border bg-surface p-3.5 text-left shadow-[var(--shadow-sm)] transition-[background-color,border-color,box-shadow,transform] duration-200 [transition-timing-function:var(--ease-out-soft)] hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-[var(--shadow)] active:translate-y-0"
               >
-                <div className="text-base font-semibold text-text">{m.name}</div>
-                <div className="mt-1 text-xs text-muted">{m.member_role || '—'}</div>
+                <div className="truncate text-base font-semibold text-text">{m.name}</div>
+                <div className="mt-auto pt-1.5 truncate text-xs text-muted">{m.member_role || '—'}</div>
               </button>
             ))}
           </div>

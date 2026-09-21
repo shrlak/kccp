@@ -14,6 +14,14 @@ const dotTone: Record<IconKeyItem, string> = {
   eduWeek2: 'bg-success',
 }
 
+// 카드 위의 칩은 좁아서 "1"·"2"로 적지만, 범례는 그 숫자가 무엇인지 말하는 자리다 —
+// 같은 키를 두 곳에 쓰는 바람에 범례가 "● 새가족  ● 1  ● 2"로 나와, 읽는 사람에게
+// 아무것도 알려주지 못하면서 자리만 차지했다.
+const LEGEND_KEY: Partial<Record<IconKeyItem, string>> = {
+  eduWeek1: 'eduWeek1Legend',
+  eduWeek2: 'eduWeek2Legend',
+}
+
 // Compact status legend shared by roster and attendance views.
 export function IconKey({ items }: { items: IconKeyItem[] }) {
   const { t } = useTranslation()
@@ -25,7 +33,7 @@ export function IconKey({ items }: { items: IconKeyItem[] }) {
           className="inline-flex items-center gap-1.5 rounded-full border border-separator bg-surface-2 px-2.5 py-1 text-[11px] font-semibold text-subtle shadow-[var(--shadow-sm)]"
         >
           <span className={'h-1.5 w-1.5 shrink-0 rounded-full ' + dotTone[item]} aria-hidden />
-          {t(`admin.iconKey.${item}`)}
+          {t(`admin.iconKey.${LEGEND_KEY[item] ?? item}`)}
         </span>
       ))}
     </div>

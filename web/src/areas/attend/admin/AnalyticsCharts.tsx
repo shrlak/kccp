@@ -346,8 +346,8 @@ export function Panel({
 }) {
   return (
     <div className="surface-panel p-5">
-      <div className={'flex items-center gap-2 border-b border-border pb-3 ' + (toolbar ? 'mb-3' : 'mb-4')}>
-        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">{icon}</span>
+      <div className={'flex items-center gap-2 border-b border-separator pb-3 ' + (toolbar ? 'mb-3' : 'mb-4')}>
+        <span className="shrink-0 text-subtle">{icon}</span>
         <h3 className="font-display text-base font-bold tracking-tight text-text">{title}</h3>
       </div>
       {toolbar && <div className="mb-3">{toolbar}</div>}

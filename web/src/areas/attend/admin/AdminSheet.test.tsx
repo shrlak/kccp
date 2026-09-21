@@ -70,10 +70,13 @@ describe('AdminSheet 출석부 (Excel-style grid)', () => {
     expect(screen.getAllByText('06/21/2026').length).toBeGreaterThan(0)
     expect(screen.getAllByText('08/02/2026').length).toBeGreaterThan(0) // upcoming Sunday column
 
-    // O = present / X = absent cells, and the KEY legend that closes the sheet.
+    // O = present / X = absent cells, and the legend that says how to read them. 범례는
+    // 'KEY' 딱지가 붙은 청록 알약이었는데, 이제 O·X·기타를 적은 한 줄이다 — 딱지 자체는
+    // 아무 말도 하지 않았고 화면에서 가장 센 색이었다.
     expect(screen.getAllByText('O').length).toBeGreaterThan(0)
     expect(screen.getAllByText('X').length).toBeGreaterThan(0)
-    expect(screen.getByText('KEY')).toBeInTheDocument()
+    expect(screen.getByText('출석')).toBeInTheDocument()
+    expect(screen.getByText('결석')).toBeInTheDocument()
   })
 
   it('marks data Sundays O/X, blanks no-data + upcoming ones, counting 예배 총 출석', async () => {
@@ -134,7 +137,9 @@ describe('AdminSheet 출석부 (Excel-style grid)', () => {
     expect(cells.map((td) => td.textContent)).toEqual(['D', '0', 'X', '방학'])
     const note = cells[3]
     expect(note.colSpan).toBe(8) // 06/14 → 08/02
-    expect(note.style.background).toBe('rgb(204, 204, 204)') // #CCCCCC
+    // 칠은 하드코딩한 #CCCCCC에서 토큰(--fill)으로 옮겼다 — 그래야 다크 모드에서도
+    // O/X 칸과 구별된다. 지켜야 하는 것은 이 칸이 **보통 칸과 다르게 칠해진다**는 것.
+    expect(note.className).toContain('bg-fill')
     // The KEY legend now includes the grey 기타 entry.
     expect(screen.getByText('기타')).toBeInTheDocument()
   })

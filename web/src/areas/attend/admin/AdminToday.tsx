@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useRoster } from './useRoster'
 import { easternNow } from '../../../lib/checkinWindow'
@@ -7,13 +7,13 @@ import { registeredOnDate } from './newFamily'
 import { checkinTag } from './todaySheet'
 import { filterMembers, filterLog, NO_FILTER, type Filter } from './filters'
 import { leaderDashboard } from './stats'
-import { GroupFilter, Pill } from './GroupFilter'
-import { IconKey } from './IconKey'
+import { GroupFilter, Pill, Segmented } from './GroupFilter'
 import { type Member } from '../../../lib/api'
 import { resolveGroupColor, hexTint } from './groupColors'
 import { copyTodaySheets, saveTodaySheets } from './todaySheetImage'
 import { Button } from '../../../components/ui/Button'
 import { Card } from '../../../components/ui/Card'
+import { StatTile, STAT_ROW } from './StatsBar'
 import { useToast } from '../../../components/ui/Toast'
 import { RefreshCw, CalendarCheck, Clock, TrendingUp, TrendingDown, Minus, Copy, Download, Users } from '../../../components/ui/Icon'
 import { EditModal, AttendanceModal } from './MemberDialogs'
@@ -90,7 +90,6 @@ export function AdminToday() {
   const kindCounts = countTodayKinds(allTodays, newMemberNames)
   const todays = filterTodayByKind(allTodays, newMemberNames, kind)
   const wk = weeklyComparison(log, today)
-  const arrow = wk.delta > 0 ? '↑' : wk.delta < 0 ? '↓' : '→'
   const arrowClass = wk.delta > 0 ? 'text-success' : wk.delta < 0 ? 'text-danger' : 'text-muted'
 
   // The 동산 dashboard shows whenever a single 동산 is in view (a leader's roster, or a
@@ -104,13 +103,17 @@ export function AdminToday() {
 
       {/* One row: 오늘 · 지난 주 · 증감 (thisWeek === today's count for a weekly-service
           church, so it doubles as 오늘 출석 인원 next to the numbers it's compared with). */}
-      <div className="mb-6 grid grid-cols-3 gap-3">
-        <Stat icon={<CalendarCheck className="size-4" aria-hidden />} label={t('admin.stats.today')} value={String(wk.thisWeek)} accent />
-        <Stat icon={<Clock className="size-4" aria-hidden />} label={t('admin.today.lastWeek')} value={String(wk.lastWeek)} />
-        <Stat
-          icon={wk.delta > 0 ? <TrendingUp className="size-4" aria-hidden /> : wk.delta < 0 ? <TrendingDown className="size-4" aria-hidden /> : <Minus className="size-4" aria-hidden />}
+      <div className={STAT_ROW + ' mb-6'}>
+        <StatTile label={t('admin.stats.today')} value={wk.thisWeek} tone="accent" />
+        <StatTile label={t('admin.today.lastWeek')} value={wk.lastWeek} />
+        <StatTile
           label={t('admin.today.change')}
-          value={`${arrow}${Math.abs(wk.delta)}`}
+          value={
+            <span className="inline-flex items-center gap-1">
+              <Delta delta={wk.delta} />
+              {wk.delta === 0 ? '0' : `${wk.delta > 0 ? '+' : '−'}${Math.abs(wk.delta)}`}
+            </span>
+          }
           valueClass={arrowClass}
         />
       </div>
@@ -165,24 +168,26 @@ export function AdminToday() {
           않는다. 수가 0인 칩도 남겨 둔다: 종류는 닫힌 집합이라 자리가 움직이면 매번 다시
           찾게 되고, 0이라는 사실 자체가 답이기 때문 (오늘 새가족이 없다). */}
       {allTodays.length > 0 && (
-        <div className="mb-3 flex flex-wrap gap-1.5">
-          <Pill active={kind === 'all'} onClick={() => setKind('all')}>
-            {t('admin.filter.all')} {allTodays.length}
-          </Pill>
-          <Pill active={kind === 'newFamily'} onClick={() => setKind('newFamily')}>
-            {t('admin.iconKey.newFamily')} {kindCounts.newFamily}
-          </Pill>
-          <Pill active={kind === 'visitor'} onClick={() => setKind('visitor')}>
-            {t('admin.iconKey.visitor')} {kindCounts.visitor}
-          </Pill>
-          <Pill active={kind === 'member'} onClick={() => setKind('member')}>
-            {t('admin.today.kind.member')} {kindCounts.member}
-          </Pill>
+        <div className="mb-3 flex flex-wrap gap-2">
+          <Segmented label={t('admin.today.title')}>
+            <Pill active={kind === 'all'} onClick={() => setKind('all')}>
+              {t('admin.filter.all')} {allTodays.length}
+            </Pill>
+            <Pill active={kind === 'newFamily'} onClick={() => setKind('newFamily')}>
+              {t('admin.iconKey.newFamily')} {kindCounts.newFamily}
+            </Pill>
+            <Pill active={kind === 'visitor'} onClick={() => setKind('visitor')}>
+              {t('admin.iconKey.visitor')} {kindCounts.visitor}
+            </Pill>
+            <Pill active={kind === 'member'} onClick={() => setKind('member')}>
+              {t('admin.today.kind.member')} {kindCounts.member}
+            </Pill>
+          </Segmented>
         </div>
       )}
-      <IconKey items={['newFamily', 'visitor']} />
-      {/* Today's check-ins run 4 per row from 640px up; phones in portrait keep 2, where
-          four cards of name + 동산 + check-in time can't fit legibly across the screen. */}
+      {/* 폰에서는 한 줄에 하나다. 두 칸으로 두면 한 칸이 ~170px가 되는데, 그 안에 이름과
+          부서·동산과 시각이 함께 들어가지 못해 이름이 한 음절씩 세로로 쪼개지고
+          (이/선/규) 부서 줄은 글자 하나로 잘렸다. 넓어질수록 2 → 3 → 4칸. */}
       {todays.length === 0 ? (
         <div className="fx-rise grid place-items-center rounded-2xl border border-dashed border-border py-14 text-center">
           <div className="grid size-14 place-items-center rounded-full bg-fill text-subtle"><CalendarCheck className="size-6" aria-hidden /></div>
@@ -192,7 +197,7 @@ export function AdminToday() {
           </p>
         </div>
       ) : (
-        <ul className="fx-stagger grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+        <ul className="fx-stagger grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {todays.map((e) => {
             const tag = checkinTag(e, newMemberNames)
             const color = resolveGroupColor(cfg?.groupColors, e.group)
@@ -212,12 +217,12 @@ export function AdminToday() {
                     {(e.name || '?').slice(0, 1)}
                   </div>
                   <div className="min-w-0">
-                    <div className="flex items-center gap-2 text-[15px] font-semibold text-text">
+                    <div className="flex min-w-0 items-center gap-2 text-[15px] font-semibold text-text">
                       {member ? (
                         <button
                           type="button"
                           onClick={() => setEditingMember(member)}
-                          className="rounded text-left hover:text-primary focus-visible:text-primary focus-visible:outline-none"
+                          className="truncate rounded text-left hover:text-primary focus-visible:text-primary focus-visible:outline-none"
                         >
                           {e.name}
                         </button>
@@ -225,7 +230,7 @@ export function AdminToday() {
                         e.name
                       )}
                       {tag && (
-                        <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
+                        <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
                           {t(tag === 'visitor' ? 'admin.iconKey.visitor' : 'admin.iconKey.newFamily')}
                         </span>
                       )}
@@ -266,31 +271,11 @@ export function AdminToday() {
   )
 }
 
-function Stat({
-  label,
-  value,
-  valueClass = 'text-text',
-  icon,
-  accent = false,
-}: {
-  label: string
-  value: string
-  valueClass?: string
-  icon?: ReactNode
-  accent?: boolean
-}) {
-  return (
-    <div
-      className={
-        'rounded-2xl border p-3.5 text-center shadow-[var(--shadow-sm)] sm:p-4 ' +
-        (accent ? 'border-primary/20 bg-primary/[0.06]' : 'border-border bg-surface')
-      }
-    >
-      {icon && (
-        <div className={'mb-1.5 flex justify-center ' + (accent ? 'text-primary' : 'text-subtle')}>{icon}</div>
-      )}
-      <div className={'font-display text-2xl font-bold tabular-nums sm:text-[28px] ' + valueClass}>{value}</div>
-      <div className="mt-1 text-[11px] font-semibold text-muted sm:text-xs">{label}</div>
-    </div>
-  )
+// 증감 타일의 화살표. 숫자 앞의 글리프(↑ ↓ →)로 적으면 폰트마다 크기와 기준선이 달라
+// 세 타일 중 이 하나만 숫자가 떠 보였다 — 다른 타일의 아이콘과 같은 것을 쓴다.
+function Delta({ delta }: { delta: number }) {
+  const cls = 'size-4 shrink-0'
+  if (delta > 0) return <TrendingUp className={cls} aria-hidden />
+  if (delta < 0) return <TrendingDown className={cls} aria-hidden />
+  return <Minus className={cls} aria-hidden />
 }
