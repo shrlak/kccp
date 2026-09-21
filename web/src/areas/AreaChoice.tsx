@@ -1,6 +1,7 @@
 import { useAdminAuth } from '../stores/useAdminAuth'
 import { areasOf, type Area } from '../lib/api'
 import { KccpMark } from './attend/checkin/KccpMark'
+import { Button } from '../components/ui/Button'
 
 // 영역을 둘 이상 가진 자격만 이 화면을 본다. 하나뿐이면 묻지 않고 곧장 들어간다 —
 // 고를 것이 없는데 고르라고 묻는 화면은 한 번 더 누르게 할 뿐이다. 지금 이 화면을
@@ -37,7 +38,11 @@ export function AreaChoice() {
               key={area}
               type="button"
               onClick={() => chooseArea(area)}
-              className="flex items-center gap-3 rounded-lg border border-border bg-surface p-4 text-left transition-colors hover:bg-surface-2"
+              className={
+                'flex items-center gap-3 rounded-2xl border border-border bg-surface p-4 text-left shadow-[var(--shadow-sm)] ' +
+                'transition-[box-shadow,transform,border-color] duration-200 [transition-timing-function:var(--ease-out-soft)] ' +
+                'hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-[var(--shadow)] active:translate-y-0'
+              }
             >
               <span className="min-w-0 flex-1">
                 <span className="block text-base font-semibold tracking-tight">{LABEL[area].name}</span>
@@ -50,9 +55,9 @@ export function AreaChoice() {
           ))}
         </div>
 
-        <button type="button" onClick={signOut} className="text-center text-sm text-primary">
+        <Button variant="ghost" size="sm" onClick={signOut} className="self-center">
           로그아웃
-        </button>
+        </Button>
       </div>
     </main>
   )

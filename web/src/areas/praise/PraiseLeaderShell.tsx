@@ -14,11 +14,10 @@
 // 미디어팀이 마법사의 「고르기」에서 그것을 연다. 저장이 실패해도 내려받기는 남는다:
 // 카톡으로 보내는 길이 아직 살아 있어야 한다.
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useAdminAuth } from '../../stores/useAdminAuth'
-import { KccpMark } from '../attend/checkin/KccpMark'
 import { setAiArea } from '../slides/lib/ai/proxy'
 import { loadConti } from '../slides/lib/utils/contiPdf'
-import { Button, Card, Field, Notice } from '../slides/ui'
+import { Button, Card, Field, Notice, Select } from '../slides/ui'
+import { AreaHeader } from '../AreaHeader'
 import { autoBuildDeck, type AutoBuildResult, type AutoStatus } from './lib/autoBuild'
 import {
   getLeaderContext,
@@ -32,7 +31,6 @@ import {
 const PPTX_MIME = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
 
 export function PraiseLeaderShell() {
-  const signOut = useAdminAuth((s) => s.signOut)
   const [ctx, setCtx] = useState<LeaderContext | null>(null)
   const [setlists, setSetlists] = useState<PraiseSetlist[]>([])
   const [serviceId, setServiceId] = useState('')
@@ -112,18 +110,9 @@ export function PraiseLeaderShell() {
   const teamName = ctx?.team?.name ?? ctx?.teams.find((t) => t.id === teamId)?.name ?? ''
 
   return (
-    <main className="min-h-dvh bg-canvas px-gutter pb-24 pt-6">
-      <div className="mx-auto flex w-full max-w-2xl flex-col gap-4">
-        <header className="flex items-baseline gap-3">
-          <span className="grid size-8 shrink-0 place-items-center rounded-[10px] bg-primary text-primary-fg">
-            <KccpMark size={18} />
-          </span>
-          <h1 className="flex-1 text-xl font-semibold tracking-tight">콘티 올리기</h1>
-          {teamName && <span className="text-xs text-muted">{teamName}</span>}
-          <button type="button" onClick={signOut} className="text-xs font-medium text-primary">
-            로그아웃
-          </button>
-        </header>
+    <main className="safe-x min-h-dvh bg-canvas pb-24">
+      <AreaHeader title="콘티 올리기" meta={teamName || undefined} />
+      <div className="mx-auto flex w-full max-w-2xl flex-col gap-4 pt-5">
 
         {error && <Notice kind="error">{error}</Notice>}
 
@@ -140,18 +129,14 @@ export function PraiseLeaderShell() {
         {ctx && !ctx.team && ctx.teams.length > 0 && (
           <Card title="팀" hint="이 계정에는 팀이 없어 고르셔야 합니다.">
             <Field label="찬양팀">
-              <select
-                value={teamId}
-                onChange={(e) => setTeamId(e.target.value)}
-                className="w-full rounded-md border border-border bg-canvas px-3 py-2 text-[15px] text-text focus:border-primary focus:outline-none"
-              >
+              <Select value={teamId} onChange={(e) => setTeamId(e.target.value)}>
                 <option value="">고르기…</option>
                 {ctx.teams.map((t) => (
                   <option key={t.id} value={t.id}>
                     {t.name}
                   </option>
                 ))}
-              </select>
+              </Select>
             </Field>
           </Card>
         )}
@@ -170,11 +155,7 @@ export function PraiseLeaderShell() {
               // 이끄는 예배가 둘인 팀(헵시바)에게만 뜨는 물음이다. 임의로 고르면 1부
               // 콘티가 2부에 앉는 주가 생기고, 그 잘못은 올린 사람 눈에 보이지 않는다.
               <Field label="예배" hint="콘티가 어느 예배의 것인지 골라 주세요.">
-                <select
-                  value={serviceId}
-                  onChange={(e) => setServiceId(e.target.value)}
-                  className="w-full rounded-md border border-border bg-canvas px-3 py-2 text-[15px] text-text focus:border-primary focus:outline-none"
-                >
+                <Select value={serviceId} onChange={(e) => setServiceId(e.target.value)}>
                   <option value="">고르기…</option>
                   {ctx.services.map((sv) => (
                     <option key={sv.id} value={sv.id}>
@@ -182,7 +163,7 @@ export function PraiseLeaderShell() {
                       {sv.leadsPpt ? ' (슬라이드)' : ''}
                     </option>
                   ))}
-                </select>
+                </Select>
               </Field>
             )}
             {service && !service.leadsPpt && (
