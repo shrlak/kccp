@@ -36,11 +36,33 @@ ok()   { printf '  \033[32m✓\033[0m %s\n' "$1"; pass=$((pass+1)); }
 bad()  { printf '  \033[31m✗\033[0m %s\n' "$1"; fail=$((fail+1)); }
 note() { printf '    %s\n' "$1"; }
 
-need() {  # need VAR_NAME "GitHub 시크릿 이름"
+need() {  # need VAR_NAME "GitHub 시크릿 이름" [secret]
   if [ -z "${!1:-}" ]; then
     bad "$1 이(가) 비어 있다 → GitHub 시크릿 $2"
     return 1
   fi
+  # **예시를 그대로 붙여넣는 실수를 여기서 잡는다.** 이대로 흘려보내면 상류가
+  # `malformed recipient "age1..."` 이나 `Invalid endpoint` 같은 말로 돌려주는데,
+  # 그 문장은 "값이 틀렸다"가 아니라 "형식이 이상하다"로 읽혀서 **진짜 키를**
+  # 의심하게 만든다. 실제로 그렇게 한 번 헤맸다.
+  #
+  # 비밀 값(비밀번호·시크릿 키)에는 **딱 맞는지만** 본다: 무작위 문자열에는
+  # `<`·`>`·`...` 가 들어갈 수 있어서, 헐거운 규칙으로 걸면 진짜 값이 거부되고
+  # 그 거부는 빠져나갈 길이 없다. 그리고 그 값은 **화면에 찍지 않는다.**
+  if [ "${3:-}" = secret ]; then
+    case "${!1}" in
+      "..."|"backup_reader 비밀번호"|"여기에 붙여넣기")
+        bad "$1 이(가) **예시 문자열 그대로**다 → 진짜 값으로 바꿔라 (GitHub 시크릿 $2)"
+        return 1 ;;
+    esac
+    return 0
+  fi
+  case "${!1}" in
+    *...*|*"<"*|*">"*|*여기에*)
+      bad "$1 이(가) **예시 문자열 그대로**다 → 진짜 값으로 바꿔라 (GitHub 시크릿 $2)"
+      note "지금 값: ${!1}"
+      return 1 ;;
+  esac
   return 0
 }
 
@@ -50,7 +72,7 @@ echo "────────────────────────�
 
 # ── 1. DB ────────────────────────────────────────────────────────────────────────────
 echo "1) Supabase 읽기 전용 접속  (SUPABASE_BACKUP_DB_PASSWORD)"
-if need PGPASSWORD SUPABASE_BACKUP_DB_PASSWORD; then
+if need PGPASSWORD SUPABASE_BACKUP_DB_PASSWORD secret; then
   if ! command -v psql > /dev/null; then
     bad "psql 이 없다 — brew install libpq / apt install postgresql-client"
   else
@@ -106,7 +128,7 @@ echo
 echo "3) Cloudflare R2  (R2_ENDPOINT · R2_ACCESS_KEY_ID · R2_SECRET_ACCESS_KEY)"
 r2_ready=0
 need R2_ENDPOINT R2_ENDPOINT && need AWS_ACCESS_KEY_ID R2_ACCESS_KEY_ID \
-  && need AWS_SECRET_ACCESS_KEY R2_SECRET_ACCESS_KEY && r2_ready=1
+  && need AWS_SECRET_ACCESS_KEY R2_SECRET_ACCESS_KEY secret && r2_ready=1
 if [ $r2_ready -eq 1 ]; then
   if ! command -v aws > /dev/null; then
     bad "aws CLI 가 없다 — brew install awscli / pip install awscli"
@@ -148,5 +170,5 @@ if [ $fail -eq 0 ]; then
   echo "  https://github.com/shrlak/kccp/settings/secrets/actions"
   exit 0
 fi
-echo "통과 $pass · \033[31m실패 $fail\033[0m — 위의 ✗ 를 고치고 다시 돌려라."
+printf '통과 %s · \033[31m실패 %s\033[0m — 위의 ✗ 를 고치고 다시 돌려라.\n' "$pass" "$fail"
 exit 1
