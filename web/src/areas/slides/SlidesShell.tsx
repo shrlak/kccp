@@ -19,25 +19,18 @@ import { NoticeStep } from './steps/NoticeStep'
 import { PraiseStep } from './steps/PraiseStep'
 import { SermonStep } from './steps/SermonStep'
 import { Button } from './ui'
+import { AreaHeader } from '../AreaHeader'
 import { useWizard, WIZARD_STEPS } from './useWizard'
 
 export function SlidesShell() {
   const identity = useAdminAuth((s) => s.identity)
-  const signOut = useAdminAuth((s) => s.signOut)
   const partition = identity?.partition ?? 'youth'
   const wizard = useWizard()
 
   return (
-    <main className="min-h-dvh bg-canvas px-gutter pb-24 pt-6">
-      <div className="mx-auto flex w-full max-w-2xl flex-col gap-4">
-        <header className="flex items-baseline gap-3">
-          <h1 className="flex-1 text-xl font-semibold tracking-tight">슬라이드</h1>
-          <span className="text-xs text-muted">{partition === 'adult' ? '장년부' : '대학·청년부'}</span>
-          <button type="button" onClick={signOut} className="text-xs font-medium text-primary">
-            로그아웃
-          </button>
-        </header>
-
+    <main className="safe-x min-h-dvh bg-canvas pb-24">
+      <AreaHeader title="슬라이드" meta={partition === 'adult' ? '장년부' : '대학·청년부'} />
+      <div className="mx-auto flex w-full max-w-2xl flex-col gap-4 pt-5">
         <StepRail step={wizard.step} onMove={wizard.goTo} />
 
         {wizard.stepId === 'praise' && <PraiseStep wizard={wizard} />}
@@ -69,7 +62,10 @@ export function SlidesShell() {
 /** 단계 목록. 지나온 단계로는 되돌아갈 수 있어야 한다 — 광고를 적다 곡 하나가 떠오른다. */
 function StepRail({ step, onMove }: { step: number; onMove: (n: number) => void }) {
   return (
-    <ol className="flex flex-wrap gap-1.5">
+    // 출석의 필터와 같은 분절 컨트롤이다 — 여섯 단계는 닫힌 집합이고, 지금 어디인지는
+    // 트랙 위로 **떠오르는 것**으로 말한다. 예전에는 현재 단계가 꽉 찬 파란 알약이라
+    // 화면에서 가장 센 색이 내용이 아니라 이동 막대였다.
+    <ol className="segmented flex w-full flex-wrap justify-start" aria-label="단계">
       {WIZARD_STEPS.map((s, i) => {
         const state = i === step ? 'current' : i < step ? 'done' : 'todo'
         return (
@@ -78,15 +74,18 @@ function StepRail({ step, onMove }: { step: number; onMove: (n: number) => void 
               type="button"
               onClick={() => onMove(i)}
               aria-current={state === 'current' ? 'step' : undefined}
-              className={`rounded-full px-2.5 py-1 font-mono text-[11px] transition-colors ${
+              className={`min-h-8 whitespace-nowrap rounded-full px-3 py-1 text-xs font-semibold transition-[background-color,color,box-shadow] duration-200 [transition-timing-function:var(--ease-out-soft)] ${
                 state === 'current'
-                  ? 'bg-primary text-primary-fg'
+                  ? 'bg-surface text-text shadow-[var(--shadow-sm)]'
                   : state === 'done'
-                    ? 'bg-fill text-text hover:bg-fill-hover'
-                    : 'bg-surface text-subtle hover:bg-fill'
+                    ? 'text-text hover:text-primary'
+                    : 'text-subtle hover:text-text'
               }`}
             >
-              {i + 1} {s.label}
+              {/* 번호와 이름 사이의 공백은 **읽히는 이름**의 일부다 ("1 찬양") — 여백을
+                  margin으로만 주면 접근성 이름이 "1찬양"으로 붙는다. */}
+              <span className="tabular-nums opacity-60">{i + 1}</span>{' '}
+              {s.label}
             </button>
           </li>
         )
